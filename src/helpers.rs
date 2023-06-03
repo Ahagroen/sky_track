@@ -1,5 +1,5 @@
 pub fn modulus(a: f64, b: f64) -> f64 {
-    return ((a % b) + b) % b;
+    ((a % b) + b) % b
 }
 
 pub fn get_tle_data() -> String {
@@ -9,5 +9,5 @@ pub fn get_tle_data() -> String {
         reqwest::blocking::get("https://celestrak.org/NORAD/elements/gp.php?CATNR=51074").unwrap();
     let mut body = String::new();
     std::io::Read::read_to_string(&mut res, &mut body).unwrap(); //Pattern matching to handle errors
-    return body;
+    body
 }

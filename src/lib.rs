@@ -25,7 +25,7 @@ impl Passes {
         for station in gs {
             passes.append(&mut Self::search_for_pass(sat, station, max_offset, offset))
         }
-        return Passes { pass_list: passes };
+        Passes { pass_list: passes }
     }
     fn search_for_pass(
         satellite: &Satellite,
@@ -37,8 +37,8 @@ impl Passes {
         let mut usable_pass = Vec::new();
         let mut pass = false;
         for i in base_offset..(range + base_offset) {
-            if last_pass_time > 480 || last_pass_time < 120 {
-                let point = ECI::new_from_point(satellite, i as f64);
+            if !(120..=480).contains(&last_pass_time) {
+                let point = Eci::new_from_point(satellite, i as f64);
                 let angle = SatAngle::compute_angle(ground, point, &satellite.epoch, i as f64);
                 if angle.elevation > 5.0 && !pass {
                     //can change depending on constraints - make variable?
@@ -52,14 +52,14 @@ impl Passes {
                     last_pass_time = 0;
                 }
             } else {
-                last_pass_time = last_pass_time + 1
+                last_pass_time += 1
             }
         }
-        return usable_pass;
+        usable_pass
     }
 
     pub fn get_next_pass(&self) -> &PassTime {
-        return self.pass_list.first().unwrap();
+        self.pass_list.first().unwrap()
     }
     pub fn propagate(&mut self) {
         if Utc::now()
@@ -87,13 +87,13 @@ impl PassTime {
         let length = los.signed_duration_since(aos).num_milliseconds() as f64 / 1000.;
         //println!("{} Duration in seconds",length);
         let max_elevation = Self::get_highest_elevation(sat, station, length, aos);
-        return PassTime {
-            aos: aos,
-            los: los,
-            length: length,
-            max_elevation: max_elevation,
+        PassTime {
+            aos,
+            los,
+            length,
+            max_elevation,
             ground_station: station.clone(),
-        };
+        }
     }
     fn get_stop_time(sat: &Satellite, station: &GroundStation, guess: i64) -> NaiveDateTime {
         //works
@@ -127,19 +127,15 @@ impl PassTime {
         //3. re-compute
         let mut rs_carry = right;
         let mut ls_carry = left;
-        let low_to_high: bool;
         let left_side_angle = Self::get_angle(sat, station, ls_carry);
-        if left_side_angle.elevation < 0. {
-            low_to_high = true;
-        } else {
-            low_to_high = false;
-        }
+        let low_to_high: bool = left_side_angle.elevation < 0.;
         loop {
             let midpoint = (rs_carry + ls_carry) / 2.;
             let angle = Self::get_angle(sat, station, midpoint);
             if (angle.elevation - 5.0).abs() < 0.1 || (ls_carry - rs_carry).abs() < 0.001 {
                 return midpoint;
             } else if angle.elevation - 5.0 < 0. {
+                //FIX: Refactor
                 if low_to_high {
                     ls_carry = midpoint
                 } else {
@@ -155,9 +151,8 @@ impl PassTime {
         }
     }
     fn get_angle(sat: &Satellite, station: &GroundStation, time_step: f64) -> SatAngle {
-        let point = ECI::new_from_point(&sat, time_step);
-        let angle = SatAngle::compute_angle(&station, point, &sat.epoch, time_step);
-        return angle;
+        let point = Eci::new_from_point(sat, time_step);
+        SatAngle::compute_angle(station, point, &sat.epoch, time_step)
     }
 }
 
@@ -171,12 +166,12 @@ pub struct GroundStation {
 }
 impl GroundStation {
     pub fn new(point: [f64; 3], name: &str) -> GroundStation {
-        return GroundStation {
+        GroundStation {
             lat: point[0],
             long: point[1],
             alt: point[2],
             name: name.to_string(),
-        };
+        }
     }
 }
 
@@ -195,11 +190,11 @@ impl Track {
             .naive_utc()
             .signed_duration_since(satellite.epoch)
             .num_seconds();
-        delta = delta + base_offset as f64;
+        delta += base_offset as f64;
         let start_val = base_offset as f64;
         while delta < duration + base_offset as f64 + start_offset {
             //In seconds since base_time
-            let loc = ECI::new_from_point(satellite, delta / 60.);
+            let loc = Eci::new_from_point(satellite, delta / 60.);
             let sub_point =
                 SubPoint::compute_sub_point(loc, satellite.epoch, delta / 60., start_val / 60.);
             delta += 1.;
@@ -213,15 +208,14 @@ impl Track {
         }
     }
     pub fn current_point(&self, offset: usize) -> &SubPoint {
-        let current_point = &self.points[offset];
-        return current_point;
+        &self.points[offset]
     }
     pub fn get_point_array(&self) -> Vec<[f64; 4]> {
         let mut output = Vec::new();
         for i in &self.points {
             output.push([i.long, i.lat, i.alt, i.time as f64])
         }
-        return output;
+        output
     }
     pub fn propagate(&mut self, duration: f64, satellite: &Satellite) {
         self.points.remove(0);
@@ -229,7 +223,7 @@ impl Track {
             .naive_utc()
             .signed_duration_since(satellite.epoch)
             .num_seconds();
-        let loc = ECI::new_from_point(satellite, (duration + self.base_offset as f64) / 60.);
+        let loc = Eci::new_from_point(satellite, (duration + self.base_offset as f64) / 60.);
         let sub_point = SubPoint::compute_sub_point(
             loc,
             satellite.epoch,
@@ -248,7 +242,7 @@ pub struct SubPoint {
 }
 impl SubPoint {
     fn compute_sub_point(
-        loc: ECI,
+        loc: Eci,
         base_time: NaiveDateTime,
         offset: f64,
         start_offset: f64,
@@ -258,14 +252,14 @@ impl SubPoint {
         let latitude = lat_alt[0];
         let altitude = lat_alt[1];
         let time = offset * 60. - start_offset * 60.;
-        return SubPoint {
+        SubPoint {
             lat: latitude,
             long: longitude,
             alt: altitude,
             time: time.round() as i64,
-        };
+        }
     }
-    fn get_lat_and_alt(satellite: &ECI) -> [f64; 2] {
+    fn get_lat_and_alt(satellite: &Eci) -> [f64; 2] {
         let mut guess = (satellite.z).atan2((satellite.x.powf(2.) + satellite.y.powf(2.)).sqrt());
         let e2 = 2. * F - F * F;
         let mut c = 1. / (1. - e2 * guess.sin().powf(2.)).sqrt();
@@ -280,20 +274,19 @@ impl SubPoint {
             //println!("Angle = {}",guess.to_degrees())
         }
         let alt = (r / guess.cos()) - A * c;
-        return [guess.to_degrees(), alt];
+        [guess.to_degrees(), alt]
     }
-    fn get_long(satellite: &ECI, base_time: &NaiveDateTime, offset: f64) -> f64 {
+    fn get_long(satellite: &Eci, base_time: &NaiveDateTime, offset: f64) -> f64 {
         let sidereal_angle = SiderealAngle::find_sidereal_angle(base_time, offset);
         let angle = ((satellite.y.atan2(satellite.x)) - sidereal_angle.angle).to_degrees() + 180.;
-        let constrained_angle = modulus(angle, 360.) - 180.;
+        modulus(angle, 360.) - 180.
         //println!("Angle = {}",constrained_angle);
-        return constrained_angle;
     }
 }
 
 //Helpers
 #[derive(Clone, Copy)]
-struct ECI {
+struct Eci {
     x: f64,
     y: f64,
     z: f64,
@@ -301,18 +294,18 @@ struct ECI {
     vy: f64,
     vz: f64,
 }
-impl ECI {
-    fn new_from_point(sat: &Satellite, offset: f64) -> ECI {
+impl Eci {
+    fn new_from_point(sat: &Satellite, offset: f64) -> Eci {
         let consts = &sat.constants;
         let prop = consts.propagate(offset).unwrap();
-        return ECI {
+        Eci {
             x: prop.position[0],
             y: prop.position[1],
             z: prop.position[2],
             vx: prop.velocity[0],
             vy: prop.velocity[1],
             vz: prop.velocity[2],
-        };
+        }
     }
 }
 pub struct Satellite {
@@ -324,7 +317,7 @@ pub struct Satellite {
 impl Satellite {
     pub fn find_tle(_sat_name: &str) -> Satellite {
         let tle = helpers::get_tle_data(); //Will take sat_name once implemented
-        return Self::create_from_tle(&tle);
+        Self::create_from_tle(&tle)
     }
     pub fn create_from_tle(tle: &str) -> Satellite {
         let mut line_count = 0;
@@ -355,20 +348,19 @@ impl Satellite {
         let epoch = elem.datetime;
         let constants = sgp4::Constants::from_elements(&elem).unwrap();
         let orbit_days = (elem.revolution_number as f64 / elem.mean_motion).floor() as u64;
-        return Satellite {
-            constants: constants,
+        Satellite {
+            constants,
             name: name.to_string(),
-            epoch: epoch,
+            epoch,
             time_since_launch: orbit_days,
-        };
+        }
     }
     pub fn get_speed(&self, time: f64) -> f64 {
-        let set = ECI::new_from_point(self, time);
-        let velocity = (set.vx.powf(2.) + set.vy.powf(2.) + set.vz.powf(2.)).sqrt();
-        return velocity;
+        let set = Eci::new_from_point(self, time);
+        (set.vx.powf(2.) + set.vy.powf(2.) + set.vz.powf(2.)).sqrt()
     }
     pub fn get_name(&self) -> String {
-        return self.name.to_string();
+        self.name.to_string()
     }
 }
 pub struct SatAngle {
@@ -383,24 +375,23 @@ impl SatAngle {
             .signed_duration_since(sat.epoch)
             .num_seconds() as f64
             / 60.;
-        let eci = ECI::new_from_point(sat, offset);
-        let sat_angle = Self::compute_angle(ground, eci, &sat.epoch, offset);
-        return sat_angle;
+        let eci = Eci::new_from_point(sat, offset);
+        Self::compute_angle(ground, eci, &sat.epoch, offset)
     }
     fn compute_angle(
         ground: &GroundStation,
-        loc: ECI,
+        loc: Eci,
         epoch: &NaiveDateTime,
         offset: f64,
     ) -> SatAngle {
-        let sidereal = SiderealAngle::find_sidereal_angle(&epoch, offset);
-        let observer = Self::xyz_from_lla(&ground, &sidereal);
+        let sidereal = SiderealAngle::find_sidereal_angle(epoch, offset);
+        let observer = Self::xyz_from_lla(ground, &sidereal);
         let angle_set = Self::compute_look(observer, loc, &sidereal, ground.lat, ground.long);
-        return SatAngle {
+        SatAngle {
             elevation: angle_set[0],
             azimuth: angle_set[1],
             range: angle_set[2],
-        };
+        }
     }
     fn xyz_from_lla(loc: &GroundStation, sidereal_angle: &SiderealAngle) -> [f64; 3] {
         //Alt in meters, lat/long in decimal degrees
@@ -412,12 +403,12 @@ impl SatAngle {
         let theta_true = sidereal_angle.angle.to_degrees() + loc.long;
         let x = r * theta_true.to_radians().cos();
         let y = r * theta_true.to_radians().sin();
-        return [x, y, z];
+        [x, y, z]
     }
 
     fn compute_look(
         observer: [f64; 3],
-        satellite: ECI,
+        satellite: Eci,
         base_side_angle: &SiderealAngle,
         latitude: f64,
         longitude: f64,
@@ -440,12 +431,12 @@ impl SatAngle {
         let elevation = ((rz / range).asin()).to_degrees();
         let mut azimuth = (-re).atan2(rs);
         if rs > 0. {
-            azimuth = azimuth + PI
+            azimuth += PI
         } else if rs < 0. {
-            azimuth = azimuth + 2. * PI
+            azimuth += 2. * PI
         }
         azimuth = modulus(azimuth.to_degrees(), 360.);
-        return [elevation, azimuth, range];
+        [elevation, azimuth, range]
     }
 }
 struct SiderealAngle {
@@ -454,9 +445,9 @@ struct SiderealAngle {
 impl SiderealAngle {
     fn find_sidereal_angle(base_time: &NaiveDateTime, offset: f64) -> SiderealAngle {
         let time = Self::time_to_jd(*base_time, offset);
-        return SiderealAngle {
+        SiderealAngle {
             angle: Self::sidereal_angle(time),
-        };
+        }
     }
     fn time_to_jd(base_time: NaiveDateTime, offset: f64) -> [f64; 2] {
         //Meeus' approach from celestrak https://celestrak.org/columns/v02n02/
@@ -469,7 +460,7 @@ impl SiderealAngle {
         let julian_day = julian_year + day as f64;
         let j2000_day = julian_day - 2451545.0;
         let offset_time = base_time.num_seconds_from_midnight() as f64 + offset * 60.;
-        return [j2000_day, offset_time];
+        [j2000_day, offset_time]
         //Adjust for UT1 off of nutation etc table
     }
 
@@ -484,22 +475,21 @@ impl SiderealAngle {
             - t * t * t * 6.2 * 10_f64.powf(-6.);
         let side_time = modulus(theta_0 + 1.00273790934 * offset * 86400., 86400.); //Why the 1.00?
                                                                                     //println!{"{}",side_time} //Make constant
-        let theta = 2. * PI * side_time / 86400.;
-        //println!("{}",theta);
-        return theta; //In radian
+        2. * PI * side_time / 86400. //In radian - returns the angle
+                                     //println!("{}",theta);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::Track;
+    use crate::Eci;
     use crate::GroundStation;
     use crate::PassTime;
     use crate::Passes;
     use crate::SatAngle;
     use crate::Satellite;
     use crate::SubPoint;
-    use crate::ECI;
     use chrono::NaiveDate;
     use chrono::NaiveDateTime;
     use chrono::NaiveTime;
@@ -512,7 +502,7 @@ mod tests {
                 alt: 0.,
                 name: "test".to_string(),
             },
-            ECI {
+            Eci {
                 x: -4400.594,
                 y: 1932.870,
                 z: 4760.712,
@@ -532,7 +522,7 @@ mod tests {
     #[test]
     fn test_sub_point() {
         let sub_point = SubPoint::compute_sub_point(
-            ECI {
+            Eci {
                 x: -4400.594,
                 y: 1932.870,
                 z: 4760.712,

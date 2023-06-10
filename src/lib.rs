@@ -1,14 +1,15 @@
 use chrono::NaiveDateTime;
 use drivers::Eci;
+use serde::{Deserialize, Serialize};
 use sgp4::Constants;
+
 mod drivers;
+pub mod ground_track;
 mod helpers;
 pub mod pass_list;
-
-pub mod ground_track;
 //DataSets
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct GroundStation {
     lat: f64,
     long: f64,

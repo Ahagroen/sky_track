@@ -1,7 +1,6 @@
 # General
 1. [ ] Refactor into modules for high level and low level logic
-   1. [ ] Potentially, Track/Passes/Station as 3 crates all running sky_track for drivers
-   2. [ ] Driver crate only for dependancies?
+   1. [X] Split Components into files for ease of maintaining
 2. [ ] Ensure ease of integration into projects
    1. [ ] Build out API concept for each
    2. [ ] Multiple output forms, ensure serde support for the needed elements

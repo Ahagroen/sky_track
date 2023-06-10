@@ -6,7 +6,8 @@ use crate::{
 use chrono::{NaiveDateTime, Utc};
 const A: f64 = 6378.135;
 pub struct Track {
-    pub points: Vec<SubPoint>, //Second field is minutes after epoch, data is polled per minute
+    ///Second field is minutes after epoch, data is polled per minute
+    pub points: Vec<SubPoint>,
     base_offset: i64,
     pub last_gen: NaiveDateTime,
 }

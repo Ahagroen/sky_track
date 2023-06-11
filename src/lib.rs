@@ -26,6 +26,7 @@ impl GroundStation {
         }
     }
 }
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Satellite {
     constants: Constants,
     pub name: String,
@@ -86,7 +87,6 @@ impl Satellite {
 mod tests {
     use crate::ground_track::Track;
     use crate::pass_list::PassTime;
-    use crate::pass_list::Passes;
     use crate::GroundStation;
     use crate::Satellite;
     use chrono::NaiveDate;
@@ -100,20 +100,19 @@ mod tests {
             2 51074  97.4622 192.5713 0010271  72.5102 287.7261 15.32323264 71737",
         );
         let delft = GroundStation::new([52.0022, 4.3736, 0.], "Test");
-        let stations = vec![&delft];
-        let passes = Passes::find_passes(
-            stations,
+        let passes = PassTime::search_for_passes(
             &sat,
+            &delft,
             12 * 60,
             NaiveDateTime::new(
                 NaiveDate::from_ymd_opt(2023, 05, 1).unwrap(),
                 NaiveTime::from_num_seconds_from_midnight_opt(54900, 0).unwrap(),
             ),
         );
-        for i in &passes.pass_list {
+        for i in &passes {
             println!("{} Pass", i.aos)
         }
-        assert_eq!(3, passes.pass_list.len())
+        assert_eq!(3, passes.len())
     }
     #[test]
     fn test_satellite_gen() {

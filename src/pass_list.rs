@@ -2,39 +2,26 @@ use crate::drivers::SatAngle;
 use crate::GroundStation;
 use crate::Satellite;
 use chrono::NaiveDateTime;
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
-pub struct Passes {
-    pub pass_list: Vec<PassTime>,
-    pub satellite: String,
+#[derive(Serialize, Deserialize, Clone)]
+pub struct PassTime {
+    pub satellite: Satellite,
+    pub ground_station: GroundStation,
+    pub aos: NaiveDateTime,
+    pub los: NaiveDateTime,
+    pub length: f64,
+    pub max_elevation: f64,
 }
-impl Passes {
-    pub fn find_passes(
-        gs: Vec<&GroundStation>,
-        sat: &Satellite,
-        max_offset: i64,
-        start_time: NaiveDateTime,
-    ) -> Passes {
-        let mut passes = Vec::new();
-        let start_delta = start_time.signed_duration_since(sat.epoch);
-        let offset = start_delta.num_seconds() / 60;
-        //println!("Offset {}",offset);
-        for station in gs {
-            passes.append(&mut Self::search_for_pass(sat, station, max_offset, offset))
-        }
-        Passes {
-            pass_list: passes,
-            satellite: sat.name.clone(),
-        }
-    }
-    fn search_for_pass(
+impl PassTime {
+    pub fn search_for_passes(
         satellite: &Satellite,
         ground: &GroundStation,
         range: i64,
-        base_offset: i64,
+        start_time: NaiveDateTime,
     ) -> Vec<PassTime> {
+        let start_delta = start_time.signed_duration_since(satellite.epoch);
+        let base_offset = start_delta.num_seconds() / 60;
         let mut last_pass_time: u16 = 6000;
         let mut usable_pass = Vec::new();
         let mut pass = false;
@@ -59,28 +46,6 @@ impl Passes {
         usable_pass
     }
 
-    pub fn get_next_pass(&self) -> &PassTime {
-        self.pass_list.first().unwrap()
-    }
-    pub fn propagate(&mut self) {
-        if Utc::now()
-            .naive_utc()
-            .signed_duration_since(self.pass_list[0].los)
-            > chrono::Duration::zero()
-        {
-            self.pass_list.remove(0);
-        }
-    }
-}
-#[derive(Serialize, Deserialize, Clone)]
-pub struct PassTime {
-    pub aos: NaiveDateTime,
-    pub los: NaiveDateTime,
-    pub length: f64,
-    pub max_elevation: f64,
-    pub ground_station: GroundStation,
-}
-impl PassTime {
     pub fn new(sat: &Satellite, guess: i64, station: &GroundStation) -> PassTime {
         //println!("stop");
         let los: NaiveDateTime = Self::get_stop_time(sat, station, guess);
@@ -90,6 +55,7 @@ impl PassTime {
         //println!("{} Duration in seconds",length);
         let max_elevation = Self::get_highest_elevation(sat, station, length, aos);
         PassTime {
+            satellite: sat.clone(),
             aos,
             los,
             length,

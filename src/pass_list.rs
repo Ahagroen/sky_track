@@ -4,11 +4,11 @@ use crate::Satellite;
 use chrono::NaiveDateTime;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use serde_json;
 
 #[derive(Serialize, Deserialize)]
 pub struct Passes {
     pub pass_list: Vec<PassTime>,
+    pub satellite: String,
 }
 impl Passes {
     pub fn find_passes(
@@ -24,7 +24,10 @@ impl Passes {
         for station in gs {
             passes.append(&mut Self::search_for_pass(sat, station, max_offset, offset))
         }
-        Passes { pass_list: passes }
+        Passes {
+            pass_list: passes,
+            satellite: sat.name.clone(),
+        }
     }
     fn search_for_pass(
         satellite: &Satellite,
@@ -67,9 +70,6 @@ impl Passes {
         {
             self.pass_list.remove(0);
         }
-    }
-    pub fn generate_json(&self) -> String {
-        serde_json::to_string(&self.pass_list).unwrap()
     }
 }
 #[derive(Serialize, Deserialize, Clone)]

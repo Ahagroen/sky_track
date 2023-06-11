@@ -135,7 +135,7 @@ mod tests {
             NaiveDate::from_ymd_opt(2023, 5, 1).unwrap(),
             NaiveTime::from_num_seconds_from_midnight_opt(45960, 0).unwrap(),
         );
-        let track = Track::get_track(25., &sat, 0.);
+        let track = Track::new_track(25., &sat, 0.);
         assert_eq!(track.points.len(), 25)
     }
     #[test]
@@ -149,7 +149,7 @@ mod tests {
             NaiveDate::from_ymd_opt(2023, 5, 1).unwrap(),
             NaiveTime::from_num_seconds_from_midnight_opt(45960, 0).unwrap(),
         );
-        let track = Track::get_track(25., &sat, -200.);
+        let track = Track::new_track(25., &sat, -200.);
         assert_eq!(track.points.len(), 25)
     }
     #[test]
@@ -163,7 +163,7 @@ mod tests {
             NaiveDate::from_ymd_opt(2023, 5, 1).unwrap(),
             NaiveTime::from_num_seconds_from_midnight_opt(45960, 0).unwrap(),
         );
-        let track = Track::get_track(500., &sat, -250.);
+        let track = Track::new_track(500., &sat, -250.);
         assert_eq!(track.points.last().unwrap().time, 249)
     }
     #[test]

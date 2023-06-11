@@ -12,7 +12,7 @@ pub struct Track {
     pub last_gen: NaiveDateTime,
 }
 impl Track {
-    pub fn get_track(duration: f64, satellite: &Satellite, start_offset: f64) -> Track {
+    pub fn new_track(duration: f64, satellite: &Satellite, start_offset: f64) -> Track {
         //Duration in seconds
         //Start offset is offset from current time
         let mut points = Vec::new();
@@ -38,17 +38,18 @@ impl Track {
             last_gen,
         }
     }
-    pub fn current_point(&self, offset: usize) -> &SubPoint {
+    pub fn get_current_point(&self, offset: usize) -> &SubPoint {
         &self.points[offset]
     }
-    pub fn get_point_array(&self) -> Vec<[f64; 4]> {
-        let mut output = Vec::new();
-        for i in &self.points {
-            output.push([i.long, i.lat, i.alt, i.time as f64])
-        }
-        output
-    }
+    // pub fn get_point_array(&self) -> Vec<[f64; 4]> {
+    //     let mut output = Vec::new();
+    //     for i in &self.points { //Probably not needed in driver crate
+    //         output.push([i.long, i.lat, i.alt, i.time as f64])
+    //     }
+    //     output
+    // }
     pub fn propagate(&mut self, duration: f64, satellite: &Satellite) {
+        //Still in driver crate? or add functionality to compute additional points?
         self.points.remove(0);
         self.base_offset = Utc::now()
             .naive_utc()

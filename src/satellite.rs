@@ -50,16 +50,16 @@ impl Satellite {
             time_since_launch: orbit_days,
         }
     }
-    pub fn get_speed(&self, time: u64) -> f64 {
+    pub fn get_speed(&self, time: i64) -> f64 {
         let set = self.get_point_eci(time);
         (set.vx.powf(2.) + set.vy.powf(2.) + set.vz.powf(2.)).sqrt()
     }
     pub fn get_name(&self) -> String {
         self.name.to_string()
     }
-    pub fn get_point_eci(&self,timestamp:u64)->Eci{
+    pub fn get_point_eci(&self,timestamp:i64)->Eci{
         let consts = &self.constants;
-        let offset = (timestamp - self.epoch.and_utc().timestamp() as u64) as f64/60.;
+        let offset = (timestamp - self.epoch.and_utc().timestamp()) as f64/60.;
         let prop = consts.propagate(offset).unwrap();
         Eci {
             x: prop.position[0],
@@ -70,7 +70,7 @@ impl Satellite {
             vz: prop.velocity[2],
         }
     }
-    pub fn get_look_angle(&self, station: &GroundStation, time_stamp: u64) -> SatAngle {
+    pub fn get_look_angle(&self, station: &GroundStation, time_stamp: i64) -> SatAngle {
         fn xyz_from_lla(loc: &GroundStation, sidereal_angle: f64) -> [f64; 3] {
             //Alt in meters, lat/long in decimal degrees
             let true_alt = 6378.137 + loc.alt / 1000.;
@@ -111,7 +111,7 @@ impl Satellite {
         azimuth = modulus(azimuth.to_degrees(), 360.);
         SatAngle{elevation, azimuth, range}
     }
-    pub fn get_sub_point(&self,time_stamp:u64) -> SubPoint {
+    pub fn get_sub_point(&self,time_stamp:i64) -> SubPoint {
         fn get_lat_and_alt(satellite: &Eci) -> [f64; 2] {
             let mut guess = (satellite.z).atan2((satellite.x.powf(2.) + satellite.y.powf(2.)).sqrt());
             let e2 = 2. * F - F * F;
@@ -146,9 +146,9 @@ impl Satellite {
             alt: altitude,
         }
     }
-    fn sidereal_angle(time_stamp: u64)->f64{
+    fn sidereal_angle(time_stamp: i64)->f64{
         //Meeus' approach from celestrak https://celestrak.org/columns/v02n02/
-        let base_time = DateTime::from_timestamp(time_stamp.try_into().expect("Couldn't convert U64 into I64"),0).unwrap();
+        let base_time = DateTime::from_timestamp(time_stamp,0).unwrap();
         let years = base_time.year() as f64 - 1.;
         let a = (years / 100.).trunc();
         let b = 2. - a + (a / 4.).trunc();

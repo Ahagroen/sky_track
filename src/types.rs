@@ -9,11 +9,13 @@ pub struct Eci {
     pub vy: f64,
     pub vz: f64,
 }
+#[derive(Clone, Copy)]
 pub struct SatAngle {
     pub elevation: f64,
     pub azimuth: f64,
     pub range: f64,
 }
+#[derive(Clone, Copy)]
 pub struct SubPoint {
     pub lat: f64,
     pub long: f64,

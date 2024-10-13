@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-pub mod types;
+mod types;
 mod helpers;
-pub mod satellite;
+mod satellite;
 //DataSets
 #[derive(Clone, Serialize, Deserialize)]
 pub struct GroundStation {

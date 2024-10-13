@@ -1,4 +1,4 @@
-use crate::drivers::SatAngle;
+use crate::types::SatAngle;
 use crate::GroundStation;
 use crate::Satellite;
 use chrono::NaiveDateTime;

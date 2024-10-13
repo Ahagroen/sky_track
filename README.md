@@ -1,2 +1,2 @@
 # sky_track
-Baseline Orbit Propagation, Ground Track and Pass computational library, using SGP4 and the Celestrak implementation for subpoints.
+Library in safe rust that supports sgp4 propagation of TLE's to determine look angles and ground points

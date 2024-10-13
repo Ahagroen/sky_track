@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-mod types;
+pub mod types;
 mod helpers;
 pub mod satellite;
 //DataSets
@@ -22,6 +22,10 @@ impl GroundStation {
     }
 }
 
+pub use satellite::Satellite;
+pub use types::Eci;
+pub use types::SatAngle;
+pub use types::SubPoint;
 
 #[cfg(test)]
 mod tests {

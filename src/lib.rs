@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
-
+pub use satellite::Satellite;
+pub use types::Eci;
+pub use types::SatAngle;
+pub use types::SubPoint;
 mod types;
 mod helpers;
 mod satellite;
@@ -22,14 +25,9 @@ impl GroundStation {
     }
 }
 
-pub use satellite::Satellite;
-pub use types::Eci;
-pub use types::SatAngle;
-pub use types::SubPoint;
-
 #[cfg(test)]
 mod tests {
-    use crate::satellite::Satellite;
+    use crate::Satellite;
     #[test]
     fn test_satellite_gen() {
         let sat = Satellite::new_from_tle(

@@ -1,7 +1,7 @@
 use std::f64::consts::PI;
 
 use serde::{Serialize,Deserialize};
-use crate::{types::{Eci, SatAngle, SubPoint, A, F,GroundStation}, helpers::modulus};
+use crate::{types::{Eci, SatAngle, SubPoint, A, F}, helpers::modulus,GroundStation};
 use chrono::{DateTime, Datelike, NaiveDateTime, Timelike};
 use sgp4::Constants;
 

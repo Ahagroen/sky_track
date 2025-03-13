@@ -168,7 +168,7 @@ impl Satellite {
                                                                                     //println!{"{}",side_time} //Make constant
         2. * PI * side_time / 86400.
     }
-    pub fn seconds_since(&self,other:&NaiveDateTime)->i64{
+    pub fn seconds_since_epoch(&self,other:&NaiveDateTime)->i64{
         other.timestamp()-self.epoch.timestamp()
     }
 }
@@ -211,7 +211,7 @@ mod tests{
         );
         let date = NaiveDate::from_ymd_opt(2025, 03, 13).unwrap();
         let time = NaiveTime::from_hms_opt(21, 54, 42).unwrap();
-        let reference_sub_point = sat.get_sub_point(sat.seconds_since(&NaiveDateTime::new(date, time)));
+        let reference_sub_point = sat.get_sub_point(sat.seconds_since_epoch(&NaiveDateTime::new(date, time)));
         assert_almost_eq(reference_sub_point.long,-63.7546);
         assert_almost_eq(reference_sub_point.lat,35.8798);
         assert_almost_eq(reference_sub_point.alt,421.1125)
@@ -225,7 +225,7 @@ mod tests{
         );
         let date = NaiveDate::from_ymd_opt(2025, 03, 13).unwrap();
         let time = NaiveTime::from_hms_opt(23, 19, 42).unwrap();
-        let refence_look_angle = sat.get_look_angle(&GroundStation::new([51.9861,4.3876,74.4], "Delft"), sat.seconds_since(&NaiveDateTime::new(date, time)));
+        let refence_look_angle = sat.get_look_angle(&GroundStation::new([51.9861,4.3876,74.4], "Delft"), sat.seconds_since_epoch(&NaiveDateTime::new(date, time)));
         assert_almost_eq(refence_look_angle.azimuth, 168.7);
         assert_almost_eq(refence_look_angle.elevation, 65.2);
         assert_almost_eq(refence_look_angle.range, 463.006316);//off by 1km

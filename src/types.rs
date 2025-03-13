@@ -1,5 +1,5 @@
 pub const F: f64 = 1. / 298.257223563;
-pub const A: f64 = 6378.135;
+pub const A: f64 = 6378.137;//meters
 #[derive(Clone, Copy)]
 pub struct Eci {
     pub x: f64,

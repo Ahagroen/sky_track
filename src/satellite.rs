@@ -128,7 +128,7 @@ impl Satellite {
             [guess.to_degrees(), alt]
         }
         fn get_long(satellite: &Eci, sidereal_angle:f64) -> f64 {
-            return -1.*(modulus((((satellite.y/satellite.x).atan()) - sidereal_angle).to_degrees(),360.)-180.);
+            -1.*(modulus((((satellite.y/satellite.x).atan()) - sidereal_angle).to_degrees(),360.)-180.)
             //println!("Angle = {}",constrained_angle);
         }
         let time_stamp= self.epoch.timestamp()+offset;

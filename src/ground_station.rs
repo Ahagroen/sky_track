@@ -7,6 +7,7 @@ pub struct GroundStation {
     pub name: String,
 }
 impl GroundStation {
+    ///Point is Lat/long/alt
     pub fn new(point: [f64; 3], name: &str) -> GroundStation {
         GroundStation {
             lat: point[0],

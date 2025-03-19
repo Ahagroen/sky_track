@@ -6,6 +6,6 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-chrono = "0.4.24"
+chrono = "0.4.40"
 serde = { version = "1.0.163", features = ["derive"] }
 sgp4 = "1.2.2"

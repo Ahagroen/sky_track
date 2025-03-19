@@ -2,7 +2,7 @@ use std::f64::consts::PI;
 
 use serde::{Serialize,Deserialize};
 use crate::{types::{Eci, SatAngle, SubPoint, A, F}, helpers::modulus,GroundStation};
-use chrono::{Datelike, NaiveDateTime, Timelike};
+use chrono::{DateTime, Datelike, NaiveDateTime, Timelike};
 use sgp4::Constants;
 
 
@@ -10,6 +10,7 @@ use sgp4::Constants;
 pub struct Satellite {
     constants: Constants,
     name: String,
+    orbital_period:f64,
     epoch: NaiveDateTime,//Epoch of the structs TLE
 }
 impl Satellite {
@@ -40,9 +41,11 @@ impl Satellite {
         )
         .unwrap();
         let epoch = elem.datetime;
+        let period = 1./elem.mean_motion*86400.;
         let constants = sgp4::Constants::from_elements(&elem).unwrap();//need to get rid of this?
         Satellite {
             constants,
+            orbital_period:period,
             name: name.to_string(),
             epoch,
         }
@@ -66,23 +69,25 @@ impl Satellite {
             vz: prop.velocity[2],
         }
     }
+
+    fn xyz_from_lla(loc: &GroundStation, sidereal_angle: f64) -> [f64; 3] {
+        //Alt in meters, lat/long in decimal degrees
+        let true_alt = A+ loc.alt / 1000.;
+        let c = 1. / (1. + F * (F - 2.) * (loc.lat.to_radians().sin()).powf(2.)).sqrt();
+        let s = (1. - F).powf(2.) * c;
+        let z = true_alt * loc.lat.to_radians().sin() * s;
+        let r = true_alt * loc.lat.to_radians().cos() * c;
+        let theta_true = modulus(sidereal_angle.to_degrees() + loc.long,360.);
+        let x = r * theta_true.to_radians().cos();
+        let y = r * theta_true.to_radians().sin();
+        [x, y, z]
+    }
+
     pub fn get_look_angle(&self, station: &GroundStation, offset: i64) -> SatAngle {
-        fn xyz_from_lla(loc: &GroundStation, sidereal_angle: f64) -> [f64; 3] {
-            //Alt in meters, lat/long in decimal degrees
-            let true_alt = 6378.137 + loc.alt / 1000.;
-            let c = 1. / (1. + F * (F - 2.) * (loc.lat.to_radians().sin()).powf(2.)).sqrt();
-            let s = (1. - F).powf(2.) * c;
-            let z = true_alt * loc.lat.to_radians().sin() * s;
-            let r = true_alt * loc.lat.to_radians().cos() * c;
-            let theta_true = sidereal_angle.to_degrees() + loc.long;
-            let x = r * theta_true.to_radians().cos();
-            let y = r * theta_true.to_radians().sin();
-            [x, y, z]
-        }
-        let time_stamp= self.epoch.timestamp()+offset;
+        let time_stamp= self.epoch.and_utc().timestamp()+offset;
         let sidereal = Self::sidereal_angle(time_stamp);
         let satellite = self.get_point_eci(offset);
-        let observer = xyz_from_lla(station, sidereal);
+        let observer = Self::xyz_from_lla(station, sidereal);
         let rx = satellite.x - observer[0];
         let ry = satellite.y - observer[1];
         let rz = satellite.z - observer[2];
@@ -108,6 +113,8 @@ impl Satellite {
         azimuth = modulus(azimuth.to_degrees(), 360.);
         SatAngle{elevation, azimuth, range}
     }
+
+
     ///compute the sub_point at a given time since epoch in seconds. 
     pub fn get_sub_point(&self,offset:i64) -> SubPoint {
         fn get_lat_and_alt(satellite: &Eci) -> [f64; 2] {
@@ -131,7 +138,7 @@ impl Satellite {
             -1.*(modulus((((satellite.y/satellite.x).atan()) - sidereal_angle).to_degrees(),360.)-180.)
             //println!("Angle = {}",constrained_angle);
         }
-        let time_stamp= self.epoch.timestamp()+offset;
+        let time_stamp= self.epoch.and_utc().timestamp()+offset;
         let sidereal_angle = Self::sidereal_angle(time_stamp);
         let eci_point = self.get_point_eci(offset);
         let longitude = get_long(&eci_point, sidereal_angle);
@@ -146,7 +153,7 @@ impl Satellite {
     }
     fn sidereal_angle(time_stamp: i64)->f64{
         //Meeus' approach from celestrak https://celestrak.org/columns/v02n02/
-        let base_time = NaiveDateTime::from_timestamp_opt(time_stamp,0).unwrap();
+        let base_time = DateTime::from_timestamp(time_stamp,0).unwrap();
         let years = base_time.year() as f64 - 1.;
         let a = (years / 100.).trunc();
         let b = 2. - a + (a / 4.).trunc();
@@ -169,7 +176,14 @@ impl Satellite {
         2. * PI * side_time / 86400.
     }
     pub fn seconds_since_epoch(&self,other:&NaiveDateTime)->i64{
-        other.timestamp()-self.epoch.timestamp()
+        other.and_utc().timestamp()-self.epoch.and_utc().timestamp()
+    }
+    pub fn get_orbital_period(&self)->f64{
+        return self.orbital_period;
+    }
+    
+    pub fn get_epoch(&self) -> NaiveDateTime {
+        self.epoch
     }
 }
 
@@ -178,7 +192,7 @@ impl Satellite {
 mod tests{
     use chrono::{NaiveDate, NaiveTime};
 
-    use crate::helpers::assert_almost_eq;
+    use crate::helpers::{assert_almost_eq, quick_gen_datetime};
 
     use super::*;
     #[test]
@@ -189,6 +203,12 @@ mod tests{
             2 51074  97.4622 192.5713 0010271  72.5102 287.7261 15.32323264 71737",
         );
         assert_eq!(sat.get_name(), "DELFI-PQ");
+    }
+    #[test]
+    fn test_sidereal_angle(){
+        let time_stamp= quick_gen_datetime(1995, 10, 1, 9, 0, 0).timestamp();
+        let sidereal_angle = Satellite::sidereal_angle(time_stamp);
+        assert_almost_eq(sidereal_angle,2.524218);
     }
     #[test]
     fn test_eci(){
@@ -215,6 +235,15 @@ mod tests{
         assert_almost_eq(reference_sub_point.long,-63.7546);
         assert_almost_eq(reference_sub_point.lat,35.8798);
         assert_almost_eq(reference_sub_point.alt,421.1125)
+    }
+    #[test]
+    fn test_gs_position(){
+        let refence_gs = &GroundStation::new([40.,75.,0.], "Test");
+        let time_stamp= quick_gen_datetime(1995, 10, 1, 9, 0, 0).timestamp();
+        let sidereal = Satellite::sidereal_angle(time_stamp);
+        assert_almost_eq(Satellite::xyz_from_lla(refence_gs, sidereal)[2],4077.9855);
+        assert_eq!(Satellite::xyz_from_lla(refence_gs, sidereal)[0],1703.295);
+        assert_eq!(Satellite::xyz_from_lla(refence_gs, sidereal)[1],4586.650);
     }
     #[test]
     fn test_look_angle(){

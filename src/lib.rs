@@ -1,7 +1,6 @@
-use std::fmt::Debug;
+use std::fmt::Display;
 
 use chrono::DateTime;
-use chrono::NaiveDateTime;
 use chrono::Utc;
 pub use satellite::Satellite;
 pub use types::Eci;
@@ -20,11 +19,12 @@ pub struct Pass{
     los:i64
 }
 
-impl Debug for Pass{
+impl Display for Pass{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Pass").field("aos", &self.aos).field("tme", &self.tme).field("max_elevation", &self.max_elevation).field("los", &self.los).finish()
+        write!(f,"aos: {}, los: {}, tme: {}, max_el: {:.2}",self.get_aos_datetime(),self.get_los_datetime(),self.get_tme_datetime(),self.max_elevation)
     }
 }
+
 impl Pass {
     pub fn get_tme(&self) -> i64 {
         self.tme
@@ -52,7 +52,7 @@ impl Pass {
     }
 }
 
-pub fn find_passes_datetime(sat:&Satellite,gs:&GroundStation,start_datetime:&NaiveDateTime,end_datetime:&NaiveDateTime)->Vec<Pass>{
+pub fn find_passes_datetime(sat:&Satellite,gs:&GroundStation,start_datetime:&DateTime<Utc>,end_datetime:&DateTime<Utc>)->Vec<Pass>{
     find_passes_offset(sat, gs, sat.seconds_since_epoch(start_datetime),sat.seconds_since_epoch(end_datetime))
 }
 
@@ -94,14 +94,10 @@ pub fn find_passes_offset(sat:&Satellite,gs:&GroundStation,start_offset:i64,end_
     passes
 }
 
-fn compute_timestamp(sat:&Satellite,time:i64)->i64{
-    time+sat.get_epoch().and_utc().timestamp()
-}
-
 fn find_zero(sat: &Satellite, gs: &GroundStation, lower_bound:i64,upper_bound:i64) ->i64{
     let mut a = lower_bound;
     let mut b =  upper_bound;
-    let mut c=(a+b)/2;
+    let mut c;
     while (b-a).abs() > 1{
         c = (a+b)/2;
         let computed_c = sat.get_look_angle(gs, c);
@@ -111,12 +107,16 @@ fn find_zero(sat: &Satellite, gs: &GroundStation, lower_bound:i64,upper_bound:i6
             b = c
         }
     }
-    println!("{}",sat.get_look_angle(gs, c).elevation);
-    return c
-        
+    let elev_a = sat.get_look_angle(gs, a).elevation;
+    let elev_b = sat.get_look_angle(gs, b).elevation;
+    let fraction = elev_a / (elev_a - elev_b);
+    let refined_c = a as f64 + fraction * (b - a) as f64;
+    return refined_c as i64
 }
 
-
+fn compute_timestamp(sat:&Satellite,time:i64)->i64{
+    time+sat.get_epoch().timestamp()
+}
 
 
 const GOLDEN_RATIO:f64 = 1.6180339887498948482045868343656381177203091798057;//Should be enough precision 
@@ -125,7 +125,7 @@ fn find_min_max(sat:&Satellite,gs:&GroundStation,start_offset:f64,end_offset:f64
     let mut rs = end_offset;
     let mut guess = end_offset-(end_offset-start_offset)/GOLDEN_RATIO;
     let maxima= next_search;
-    while rs-ls > 1.0{
+    while (rs-ls).abs() > 1.0{
         // ls_value = sat.get_look_angle(gs, ls.floor() as i64);
         // rs_value = sat.get_look_angle(gs, rs.floor() as i64);
         guess = rs-(rs-ls)/GOLDEN_RATIO;
@@ -144,14 +144,12 @@ fn find_min_max(sat:&Satellite,gs:&GroundStation,start_offset:f64,end_offset:f64
             }
         }
     }
-    (guess.floor() as i64,maxima)
+    (guess.round() as i64,maxima)
     
 }
 
 #[cfg(test)]
 mod tests{
-    use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
-
     use crate::{find_passes_datetime, helpers::quick_gen_datetime, GroundStation, Satellite};
     #[test]
     fn test_find_passes(){
@@ -160,16 +158,18 @@ mod tests{
 1 25544U 98067A   25078.36999458  .00023040  00000+0  41584-3 0  9998
 2 25544  51.6365  31.8868 0003892  28.0409 332.0788 15.49628144501233",
         );
+        println!("{}",quick_gen_datetime(2025, 3, 20, 11, 10, 0).timestamp());
         let gs = GroundStation::new([51.9861,4.3876,74.4], "Test");
-        let date = NaiveDate::from_ymd_opt(2025, 03, 19).unwrap();
-        let time = NaiveTime::from_hms_opt(21, 00, 04).unwrap();
-        let end_date = NaiveDate::from_ymd_opt(2025, 03, 22).unwrap();
-        let end_time = NaiveTime::from_hms_opt(21, 00, 04).unwrap();
-        let passes = find_passes_datetime(&sat, &gs, &NaiveDateTime::new(date, time), &NaiveDateTime::new(end_date, end_time));
-        println!("{:?}",passes);
-        // assert_eq!(passes.len(),18);
-        assert_eq!(passes[0].get_aos_datetime(),quick_gen_datetime(2025, 3, 19, 21, 37, 48));
-        assert_eq!(passes[0].get_tme_datetime(),quick_gen_datetime(2025, 3, 19, 21, 43, 19));
-        assert_eq!(passes[0].get_aos_datetime(),quick_gen_datetime(2025, 3, 19, 21, 48, 49));
+        let start_date_time = quick_gen_datetime(2025, 03, 21, 00, 22, 0);
+        let end_date_time = quick_gen_datetime(2025, 03, 23, 23, 22, 0);
+        let passes = find_passes_datetime(&sat, &gs, &start_date_time, &end_date_time);
+        for i in &passes{
+            println!("{}",i);
+        }
+        assert_eq!(passes.len(),18);
+        println!("{}",sat.get_look_angle(&gs,sat.offset_timestamp(quick_gen_datetime(2025, 3, 19, 21, 37, 48).timestamp())).elevation);
+        assert_eq!(passes[0].get_aos_datetime(),quick_gen_datetime(2025, 3, 21, 15, 13, 34));
+        assert_eq!(passes[0].get_tme_datetime(),quick_gen_datetime(2025, 3, 21, 15, 17, 53));
+        assert_eq!(passes[0].get_aos_datetime(),quick_gen_datetime(2025, 3, 21, 15, 22, 13));
     }
 }

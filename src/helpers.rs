@@ -16,7 +16,6 @@ where T: std::ops::Sub+PartialOrd<f64>+std::fmt::Debug+PartialOrd<T>+Copy,
     }
 }
 
-
 #[cfg(test)]
 use chrono::{DateTime,Utc};
 #[cfg(test)]

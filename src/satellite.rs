@@ -89,21 +89,22 @@ impl Satellite {
     }
 
     fn get_look_angle_direct(station: &GroundStation, time_stamp: i64, satellite: Eci) -> SatAngle {
+        let e2 = 2.*F - F.powf(2.0);
         let sidereal = Self::sidereal_angle(time_stamp);
         let observer = Self::xyz_from_lla(station, sidereal);
         let rx = satellite.x - observer[0];
         let ry = satellite.y - observer[1];
         let rz = satellite.z - observer[2];
-        let rad_lat = station.lat.to_radians(); 
+        let rad_lat = (1./(1. - e2) * station.lat.to_radians().tan()).atan(); 
         let side_angle = modulus((sidereal.to_degrees() + station.long).to_radians(),2.*PI);
         let rs = rad_lat.sin() * side_angle.cos() * rx + rad_lat.sin() * side_angle.sin() * ry
             - rad_lat.cos() * rz;
         let re = -side_angle.sin() * rx + side_angle.cos() * ry;
-        let rz = rad_lat.cos() * side_angle.cos() * rx
+        let rdown = rad_lat.cos() * side_angle.cos() * rx
             + rad_lat.cos() * side_angle.sin() * ry
             + rad_lat.sin() * rz;
-        let range = (rs * rs + re * re + rz * rz).sqrt();
-        let elevation = ((rz / range).asin()).to_degrees();
+        let range = (rs * rs + re * re + rdown * rdown).sqrt();
+        let elevation = ((rdown / range).asin()).to_degrees();
         let mut azimuth = (-re/rs).atan();
         if rs > 0. {
             azimuth += PI
@@ -232,14 +233,14 @@ mod tests{
         let reference_sub_point = sat.get_sub_point(sat.seconds_since_epoch(&date));
         assert_almost_eq(reference_sub_point.long,-63.7546);
         assert_almost_eq(reference_sub_point.lat,35.8798);
-        assert_almost_eq(reference_sub_point.alt,421.1125)
+        assert_almost_eq(reference_sub_point.alt,421.112511)
     }
     #[test]
     fn test_gs_position(){
         let refence_gs = &GroundStation::new([40.,-75.,0.], "Test");
         let time_stamp= quick_gen_datetime(1995, 10, 1, 9, 0, 0).timestamp();
         let sidereal = Satellite::sidereal_angle(time_stamp);
-        assert_almost_eq(Satellite::xyz_from_lla(refence_gs, sidereal)[2],4077.9855);
+        assert_almost_eq(Satellite::xyz_from_lla(refence_gs, sidereal)[2],4077.985572);
         assert_almost_eq(Satellite::xyz_from_lla(refence_gs, sidereal)[0],1703.295618);
         assert_almost_eq(Satellite::xyz_from_lla(refence_gs, sidereal)[1],4586.6514);
     }
@@ -258,10 +259,10 @@ mod tests{
 1 25544U 98067A   25078.36999458  .00023040  00000+0  41584-3 0  9998
 2 25544  51.6365  31.8868 0003892  28.0409 332.0788 15.49628144501233",
         );
-        let date = quick_gen_datetime(2025, 03, 19,21, 00, 04);
+        let date = quick_gen_datetime(2025, 03, 21,21, 55, 23);
         let refence_look_angle = sat.get_look_angle(&GroundStation::new([51.9861,4.3876,74.4], "Delft"), sat.seconds_since_epoch(&date));
-        assert_almost_eq(refence_look_angle.azimuth, 289.23516);
-        assert_almost_eq(refence_look_angle.elevation, -80.286);
-        assert_almost_eq(refence_look_angle.range, 12991.4);//off by 1km
+        assert_almost_eq(refence_look_angle.azimuth, 131.230589);
+        assert_almost_eq(refence_look_angle.elevation, -17.7);
+        assert_almost_eq(refence_look_angle.range, 4984.360);//off by 1km
     }
 }

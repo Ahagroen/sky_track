@@ -9,7 +9,7 @@ pub fn assert_almost_eq<T>(a:T,b:T)
 where T: std::ops::Sub+PartialOrd<f64>+std::fmt::Debug+PartialOrd<T>+Copy,
 <T as std::ops::Sub>::Output: PartialOrd<f64>
 {
-    if a-b<1e-4{
+    if a-b<1e-5{
         assert!(true)
     } else{
         assert_eq!(a,b)

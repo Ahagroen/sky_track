@@ -111,7 +111,7 @@ fn find_zero(sat: &Satellite, gs: &GroundStation, lower_bound:i64,upper_bound:i6
     let elev_b = sat.get_look_angle(gs, b).elevation;
     let fraction = elev_a / (elev_a - elev_b);
     let refined_c = a as f64 + fraction * (b - a) as f64;
-    return refined_c as i64
+    refined_c as i64
 }
 
 fn compute_timestamp(sat:&Satellite,time:i64)->i64{
@@ -119,7 +119,7 @@ fn compute_timestamp(sat:&Satellite,time:i64)->i64{
 }
 
 
-const GOLDEN_RATIO:f64 = 1.6180339887498948482045868343656381177203091798057;//Should be enough precision 
+const GOLDEN_RATIO:f64 = 1.6180339887498948482045868343656;//Should be enough precision 
 fn find_min_max(sat:&Satellite,gs:&GroundStation,start_offset:f64,end_offset:f64,next_search:bool)->(i64,bool){//returns time and if max/min (max=true)
     let mut ls = start_offset;
     let mut rs = end_offset;
@@ -163,11 +163,15 @@ mod tests{
         let start_date_time = quick_gen_datetime(2025, 03, 21, 00, 22, 0);
         let end_date_time = quick_gen_datetime(2025, 03, 23, 23, 22, 0);
         let passes = find_passes_datetime(&sat, &gs, &start_date_time, &end_date_time);
-        for i in &passes{
-            println!("{}",i);
-        }
+        //for i in &passes{
+        //    println!("AOS: {}, azimuth: {:.2}, elevation: {:.2}",i.get_aos_datetime(),sat.get_look_angle(&gs,sat.offset_timestamp(i.get_aos())).azimuth,sat.get_look_angle(&gs,sat.offset_timestamp(i.get_aos())).elevation);
+      //      println!("TME: {}, azimuth: {:.2}, elevation: {:.2}",i.get_tme_datetime(),sat.get_look_angle(&gs,sat.offset_timestamp(i.get_tme())).azimuth,sat.get_look_angle(&gs,sat.offset_timestamp(i.get_tme())).elevation);
+    //        println!("LOS: {}, azimuth: {:.2}, elevation: {:.2}",i.get_los_datetime(),sat.get_look_angle(&gs,sat.offset_timestamp(i.get_los())).azimuth,sat.get_look_angle(&gs,sat.offset_timestamp(i.get_los())).elevation);
+  //          println!()
+//        }
         assert_eq!(passes.len(),18);
         println!("{}",sat.get_look_angle(&gs,sat.offset_timestamp(quick_gen_datetime(2025, 3, 19, 21, 37, 48).timestamp())).elevation);
+        println!("{}",sat.get_look_angle(&gs,sat.offset_timestamp(passes[0].get_aos())).elevation);
         assert_eq!(passes[0].get_aos_datetime(),quick_gen_datetime(2025, 3, 21, 15, 13, 34));
         assert_eq!(passes[0].get_tme_datetime(),quick_gen_datetime(2025, 3, 21, 15, 17, 53));
         assert_eq!(passes[0].get_aos_datetime(),quick_gen_datetime(2025, 3, 21, 15, 22, 13));

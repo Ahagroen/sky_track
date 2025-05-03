@@ -1,6 +1,7 @@
 pub const F: f64 = 1. / 298.257223563;
-pub const A: f64 = 6378.137;//meters
-#[derive(Clone, Copy)]
+pub const A: f64 = 6378.13700; //meters
+pub const B: f64 = 6356.752314;
+#[derive(Clone, Copy, Debug)]
 pub struct Eci {
     pub x: f64,
     pub y: f64,
@@ -15,10 +16,9 @@ pub struct SatAngle {
     pub azimuth: f64,
     pub range: f64,
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct SubPoint {
     pub lat: f64,
     pub long: f64,
     pub alt: f64,
 }
-

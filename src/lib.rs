@@ -98,7 +98,6 @@ pub fn find_passes_offset(
         mins_maxes.push(next_data);
     }
     let mut passes: Vec<Pass> = vec![];
-    println!("minmaxes:{}", mins_maxes.len());
     for i in (0..mins_maxes.len()).step_by(2) {
         if i + 1 == mins_maxes.len() {
             break;
@@ -135,18 +134,14 @@ fn find_zero(sat: &Satellite, gs: &GroundStation, lower_bound: i64, upper_bound:
     let mut c;
     while (b - a).abs() > 1 {
         c = (a + b) / 2;
-        let computed_c = sat.get_look_angle(gs, c);
+        let computed_c = sat.get_look_angle_refraction(gs, c);
         if computed_c.elevation < 0. {
             a = c
         } else {
             b = c
         }
     }
-    let elev_a = sat.get_look_angle(gs, a).elevation;
-    let elev_b = sat.get_look_angle(gs, b).elevation;
-    let fraction = elev_a / (elev_a - elev_b);
-    let refined_c = a as f64 + fraction * (b - a) as f64;
-    refined_c as i64
+    b as i64
 }
 
 fn compute_timestamp(sat: &Satellite, time: i64) -> i64 {
@@ -194,12 +189,51 @@ fn find_min_max(
             }
         }
     }
-    (guess.round() as i64, maxima)
+    (ls.round() as i64, maxima)
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{GroundStation, Satellite, find_passes_datetime, helpers::quick_gen_datetime};
+    #[test]
+    fn test_find_one_pass() {
+        let sat = Satellite::new_from_tle(
+            "ISS (ZARYA)             
+1 25544U 98067A   25122.54440123  .00015063  00000+0  27814-3 0  9994
+2 25544  51.6345 173.1350 0002187  74.2134 285.9096 15.49297959508085",
+        );
+        let gs = GroundStation::new([51.9861, 4.3876, 0.], "Test");
+        let start_date_time = quick_gen_datetime(2025, 05, 02, 21, 55, 14);
+        let end_date_time = quick_gen_datetime(2025, 05, 02, 23, 00, 00);
+        let passes = find_passes_datetime(&sat, &gs, &start_date_time, &end_date_time);
+        for i in &passes {
+            println!(
+                "AOS: {}, azimuth: {:.2}, elevation: {:.2}",
+                i.get_aos_datetime(),
+                sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_aos()))
+                    .azimuth,
+                sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_aos()))
+                    .elevation
+            );
+            println!(
+                "TME: {}, azimuth: {:.2}, elevation: {:.2}",
+                i.get_tme_datetime(),
+                sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_tme()))
+                    .azimuth,
+                sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_tme()))
+                    .elevation
+            );
+            println!(
+                "LOS: {}, azimuth: {:.2}, elevation: {:.2}",
+                i.get_los_datetime(),
+                sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_los()))
+                    .azimuth,
+                sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_los()))
+                    .elevation
+            );
+        }
+        assert!(false)
+    }
     #[test]
     fn test_find_passes() {
         let sat = Satellite::new_from_tle(
@@ -215,38 +249,43 @@ mod tests {
             println!(
                 "AOS: {}, azimuth: {:.2}, elevation: {:.2}",
                 i.get_aos_datetime(),
-                sat.get_look_angle(&gs, sat.offset_timestamp(i.get_aos()))
+                sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_aos()))
                     .azimuth,
-                sat.get_look_angle(&gs, sat.offset_timestamp(i.get_aos()))
+                sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_aos()))
                     .elevation
             );
             println!(
                 "TME: {}, azimuth: {:.2}, elevation: {:.2}",
                 i.get_tme_datetime(),
-                sat.get_look_angle(&gs, sat.offset_timestamp(i.get_tme()))
+                sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_tme()))
                     .azimuth,
-                sat.get_look_angle(&gs, sat.offset_timestamp(i.get_tme()))
+                sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_tme()))
                     .elevation
             );
             println!(
                 "LOS: {}, azimuth: {:.2}, elevation: {:.2}",
                 i.get_los_datetime(),
-                sat.get_look_angle(&gs, sat.offset_timestamp(i.get_los()))
+                sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_los()))
                     .azimuth,
-                sat.get_look_angle(&gs, sat.offset_timestamp(i.get_los()))
+                sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_los()))
                     .elevation
             );
             println!()
         }
-        assert_eq!(passes.len(), 19);
         println!(
-            "{}",
-            sat.get_look_angle(
+            "{},{}",
+            sat.get_look_angle_refraction(
                 &gs,
-                sat.offset_timestamp(quick_gen_datetime(2025, 5, 2, 22, 31, 54).timestamp())
+                sat.offset_timestamp(quick_gen_datetime(2025, 5, 2, 22, 40, 43).timestamp())
+            )
+            .azimuth,
+            sat.get_look_angle_refraction(
+                &gs,
+                sat.offset_timestamp(quick_gen_datetime(2025, 5, 2, 22, 40, 43).timestamp())
             )
             .elevation
         );
+        assert_eq!(passes.len(), 19);
         println!(
             "{}",
             sat.get_look_angle(&gs, sat.offset_timestamp(passes[0].get_aos()))

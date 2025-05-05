@@ -1,12 +1,12 @@
 use crate::{
     GroundStation,
     helpers::modulus,
-    types::{A, B, Eci, F, SatAngle, SubPoint},
+    types::{A, Eci, F, SatAngle, SubPoint},
 };
 use chrono::{DateTime, Datelike, NaiveDateTime, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 use sgp4::Constants;
-use std::{cell::LazyCell, collections::HashMap, f64::consts::PI, io::BufRead};
+use std::{collections::HashMap, f64::consts::PI, io::BufRead};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Satellite {
@@ -14,6 +14,7 @@ pub struct Satellite {
     name: String,
     orbital_period: f64,
     epoch: NaiveDateTime, //Epoch of the structs TLE
+    norad_id: u64,
 }
 impl Satellite {
     pub fn new_from_tle(tle: &str) -> Satellite {
@@ -44,13 +45,18 @@ impl Satellite {
         .unwrap();
         let epoch = elem.datetime;
         let period = 1. / elem.mean_motion * 86400.;
+        let norad_id = elem.norad_id;
         let constants = sgp4::Constants::from_elements(&elem).unwrap(); //need to get rid of this?
         Satellite {
             constants,
             orbital_period: period,
             name: name.to_string(),
             epoch,
+            norad_id,
         }
+    }
+    pub fn get_norad_id(&self) -> u64 {
+        self.norad_id
     }
     pub fn get_speed(&self, offset: i64) -> f64 {
         let set = self.get_point_eci(offset);
@@ -127,7 +133,7 @@ impl Satellite {
     ///Computes the look angle from the station to the satellite, accounting for refractive effects. Returns None if the station cannot actually see the satellite.
     pub fn get_look_angle_refraction(&self, station: &GroundStation, offset: i64) -> SatAngle {
         let base_look_angle = self.get_look_angle(station, offset);
-        let min_elv = -0.875 * (station.alt).sqrt();
+        let _min_elv = -0.875 * (station.alt).sqrt();
         if base_look_angle.elevation > 10. {
             return base_look_angle;
         } else {
@@ -217,8 +223,7 @@ impl Satellite {
             [guess.to_degrees(), alt]
         }
         fn get_long(satellite: &Eci, sidereal_angle: f64) -> f64 {
-            let data = (satellite.y.atan2(satellite.x) - sidereal_angle).to_degrees();
-            println!("data: {}", data);
+            let data = -(satellite.y.atan2(satellite.x) - sidereal_angle).to_degrees();
             if data < -180. {
                 return data + 360.;
             } else if data > 180. {
@@ -283,7 +288,7 @@ impl Satellite {
     }
 }
 
-fn load_deltat() -> HashMap<i64, f64> {
+fn _load_deltat() -> HashMap<i64, f64> {
     let delta_t_data = include_bytes!("deltat.txt");
     let mut output: HashMap<i64, f64> = Default::default();
     for i in delta_t_data.lines() {

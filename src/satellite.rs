@@ -10,12 +10,23 @@ use std::{collections::HashMap, f64::consts::PI, io::BufRead};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Satellite {
+    tle: String,
     constants: Constants,
     name: String,
     orbital_period: f64,
     epoch: NaiveDateTime, //Epoch of the structs TLE
     norad_id: u64,
 }
+impl PartialEq for Satellite {
+    fn eq(&self, other: &Self) -> bool {
+        if self.norad_id == other.norad_id {
+            self.epoch == other.epoch
+        } else {
+            false
+        }
+    }
+}
+
 impl Satellite {
     pub fn new_from_tle(tle: &str) -> Satellite {
         let mut line_count = 0;
@@ -48,12 +59,19 @@ impl Satellite {
         let norad_id = elem.norad_id;
         let constants = sgp4::Constants::from_elements(&elem).unwrap(); //need to get rid of this?
         Satellite {
+            tle: tle.to_string(),
             constants,
             orbital_period: period,
             name: name.to_string(),
             epoch,
             norad_id,
         }
+    }
+    pub fn get_tle(&self) -> &str {
+        self.tle.as_str()
+    }
+    pub fn get_period(&self) -> f64 {
+        self.orbital_period
     }
     pub fn get_norad_id(&self) -> u64 {
         self.norad_id

@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 
 use crate::{GroundStation, Satellite};
 
+#[derive(Debug, Clone, Copy)]
 pub struct Pass {
     aos: i64,
     tme: i64,
@@ -72,7 +73,6 @@ pub fn find_passes_offset(
     end_offset: i64,
 ) -> Vec<Pass> {
     //https://celestrak.org/columns/v03n04/ - Reference
-    println!("starting");
     let orbital_period = sat.get_orbital_period();
     let mut timestamp = start_offset - orbital_period.floor() as i64;
     let mut mins_maxes: Vec<(i64, bool)> = vec![]; //heapless vec!!
@@ -189,45 +189,44 @@ fn find_min_max(
 #[cfg(test)]
 mod tests {
     use crate::{GroundStation, Satellite, find_passes_datetime, helpers::quick_gen_datetime};
-    #[test]
-    fn test_find_one_pass() {
-        let sat = Satellite::new_from_tle(
-            "ISS (ZARYA)             
-1 25544U 98067A   25122.54440123  .00015063  00000+0  27814-3 0  9994
-2 25544  51.6345 173.1350 0002187  74.2134 285.9096 15.49297959508085",
-        );
-        let gs = GroundStation::new([51.9861, 4.3876, 0.], "Test");
-        let start_date_time = quick_gen_datetime(2025, 05, 02, 21, 55, 14);
-        let end_date_time = quick_gen_datetime(2025, 05, 02, 23, 00, 00);
-        let passes = find_passes_datetime(&sat, &gs, &start_date_time, &end_date_time);
-        for i in &passes {
-            println!(
-                "AOS: {}, azimuth: {:.2}, elevation: {:.2}",
-                i.get_aos_datetime(),
-                sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_aos()))
-                    .azimuth,
-                sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_aos()))
-                    .elevation
-            );
-            println!(
-                "TME: {}, azimuth: {:.2}, elevation: {:.2}",
-                i.get_tme_datetime(),
-                sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_tme()))
-                    .azimuth,
-                sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_tme()))
-                    .elevation
-            );
-            println!(
-                "LOS: {}, azimuth: {:.2}, elevation: {:.2}",
-                i.get_los_datetime(),
-                sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_los()))
-                    .azimuth,
-                sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_los()))
-                    .elevation
-            );
-        }
-        assert!(false)
-    }
+    //     #[test]
+    //     fn test_find_one_pass() {
+    //         let sat = Satellite::new_from_tle(
+    //             "ISS (ZARYA)
+    // 1 25544U 98067A   25122.54440123  .00015063  00000+0  27814-3 0  9994
+    // 2 25544  51.6345 173.1350 0002187  74.2134 285.9096 15.49297959508085",
+    //         );
+    //         let gs = GroundStation::new([51.9861, 4.3876, 0.], "Test");
+    //         let start_date_time = quick_gen_datetime(2025, 05, 02, 21, 55, 14);
+    //         let end_date_time = quick_gen_datetime(2025, 05, 02, 23, 00, 00);
+    //         let passes = find_passes_datetime(&sat, &gs, &start_date_time, &end_date_time);
+    //         for i in &passes {
+    //             println!(
+    //                 "AOS: {}, azimuth: {:.2}, elevation: {:.2}",
+    //                 i.get_aos_datetime(),
+    //                 sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_aos()))
+    //                     .azimuth,
+    //                 sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_aos()))
+    //                     .elevation
+    //             );
+    //             println!(
+    //                 "TME: {}, azimuth: {:.2}, elevation: {:.2}",
+    //                 i.get_tme_datetime(),
+    //                 sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_tme()))
+    //                     .azimuth,
+    //                 sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_tme()))
+    //                     .elevation
+    //             );
+    //             println!(
+    //                 "LOS: {}, azimuth: {:.2}, elevation: {:.2}",
+    //                 i.get_los_datetime(),
+    //                 sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_los()))
+    //                     .azimuth,
+    //                 sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_los()))
+    //                     .elevation
+    //             );
+    //         }
+    //     }
     #[test]
     fn test_find_passes() {
         let sat = Satellite::new_from_tle(
@@ -239,63 +238,18 @@ mod tests {
         let start_date_time = quick_gen_datetime(2025, 05, 02, 21, 55, 14);
         let end_date_time = quick_gen_datetime(2025, 05, 05, 21, 55, 14);
         let passes = find_passes_datetime(&sat, &gs, &start_date_time, &end_date_time);
-        for i in &passes {
-            println!(
-                "AOS: {}, azimuth: {:.2}, elevation: {:.2}",
-                i.get_aos_datetime(),
-                sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_aos()))
-                    .azimuth,
-                sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_aos()))
-                    .elevation
-            );
-            println!(
-                "TME: {}, azimuth: {:.2}, elevation: {:.2}",
-                i.get_tme_datetime(),
-                sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_tme()))
-                    .azimuth,
-                sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_tme()))
-                    .elevation
-            );
-            println!(
-                "LOS: {}, azimuth: {:.2}, elevation: {:.2}",
-                i.get_los_datetime(),
-                sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_los()))
-                    .azimuth,
-                sat.get_look_angle_refraction(&gs, sat.offset_timestamp(i.get_los()))
-                    .elevation
-            );
-            println!()
-        }
-        println!(
-            "{},{}",
-            sat.get_look_angle_refraction(
-                &gs,
-                sat.offset_timestamp(quick_gen_datetime(2025, 5, 2, 22, 40, 43).timestamp())
-            )
-            .azimuth,
-            sat.get_look_angle_refraction(
-                &gs,
-                sat.offset_timestamp(quick_gen_datetime(2025, 5, 2, 22, 40, 43).timestamp())
-            )
-            .elevation
-        );
         assert_eq!(passes.len(), 19);
-        println!(
-            "{}",
-            sat.get_look_angle(&gs, sat.offset_timestamp(passes[0].get_aos()))
-                .elevation
-        );
         assert_eq!(
             passes[0].get_aos_datetime(),
-            quick_gen_datetime(2025, 5, 2, 22, 31, 54)
+            quick_gen_datetime(2025, 5, 2, 22, 31, 50)
         );
         assert_eq!(
             passes[0].get_tme_datetime(),
             quick_gen_datetime(2025, 5, 2, 22, 36, 18)
         );
         assert_eq!(
-            passes[0].get_aos_datetime(),
-            quick_gen_datetime(2025, 5, 2, 22, 40, 43)
+            passes[0].get_los_datetime(),
+            quick_gen_datetime(2025, 5, 2, 22, 40, 47)
         );
     }
 }

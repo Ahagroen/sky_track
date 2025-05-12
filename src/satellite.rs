@@ -8,23 +8,36 @@ use serde::{Deserialize, Serialize};
 use sgp4::Constants;
 use std::{collections::HashMap, f64::consts::PI, io::BufRead};
 
+const MU: f64 = 3.986004418E14;
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Satellite {
     tle: String,
     constants: Constants,
-    name: String,
+    sat_data: SatData,
     orbital_period: f64,
     epoch: NaiveDateTime, //Epoch of the structs TLE
-    norad_id: u64,
+    mean_motion: MeanMotion,
 }
 impl PartialEq for Satellite {
     fn eq(&self, other: &Self) -> bool {
-        if self.norad_id == other.norad_id {
+        if self.sat_data.norad_id == other.sat_data.norad_id {
             self.epoch == other.epoch
         } else {
             false
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct MeanMotion {
+    ec: f64,
+    sma: f64,
+}
+#[derive(Serialize, Deserialize, Clone)]
+struct SatData {
+    name: String,
+    norad_id: u64,
 }
 
 impl Satellite {
@@ -57,14 +70,22 @@ impl Satellite {
         let epoch = elem.datetime;
         let period = 1. / elem.mean_motion * 86400.;
         let norad_id = elem.norad_id;
+        let n = elem.mean_motion * (2.0 * PI) / 86400.0;
+        let sma = (MU / n.powi(2)).powf(1. / 3.);
         let constants = sgp4::Constants::from_elements(&elem).unwrap(); //need to get rid of this?
         Satellite {
             tle: tle.to_string(),
             constants,
             orbital_period: period,
-            name: name.to_string(),
+            sat_data: SatData {
+                name: name.to_string(),
+                norad_id,
+            },
             epoch,
-            norad_id,
+            mean_motion: MeanMotion {
+                ec: elem.eccentricity,
+                sma,
+            },
         }
     }
     pub fn get_tle(&self) -> &str {
@@ -74,14 +95,14 @@ impl Satellite {
         self.orbital_period
     }
     pub fn get_norad_id(&self) -> u64 {
-        self.norad_id
+        self.sat_data.norad_id
     }
     pub fn get_speed(&self, offset: i64) -> f64 {
         let set = self.get_point_eci(offset);
         (set.vx.powf(2.) + set.vy.powf(2.) + set.vz.powf(2.)).sqrt()
     }
     pub fn get_name(&self) -> String {
-        self.name.to_string()
+        self.sat_data.name.to_string()
     }
     pub fn get_point_eci(&self, offset: i64) -> Eci {
         let consts = &self.constants;
@@ -94,6 +115,12 @@ impl Satellite {
             vy: prop.velocity[1],
             vz: prop.velocity[2],
         }
+    }
+    ///Returns values relative to spherical earth, may not match sub point values
+    pub fn get_apogee_perigee(&self) -> (f64, f64) {
+        let apogee = self.mean_motion.sma * (1.0 + self.mean_motion.ec);
+        let perigee = self.mean_motion.sma * (1.0 - self.mean_motion.ec);
+        return (apogee / 1000.0 - 6378.14, perigee / 1000.0 - 6378.14);
     }
 
     fn lla_to_ecef(loc: [f64; 3], sidereal_angle: f64, time_stamp: i64) -> [f64; 3] {
@@ -221,41 +248,40 @@ impl Satellite {
         }
     }
     ///compute the sub_point at a given time since epoch in seconds.
+    fn get_lat_and_alt(satellite: &Eci) -> [f64; 2] {
+        let mut guess = (satellite.z).atan2((satellite.x.powf(2.) + satellite.y.powf(2.)).sqrt());
+        let e2 = 2. * F - F * F;
+        let mut c = 1. / (1. - e2 * guess.sin().powf(2.)).sqrt();
+        let mut last_guess: f64 = 0.;
+        //let r = A*c*(guess.cos());
+        let r = (satellite.x.powf(2.) + satellite.y.powf(2.)).sqrt();
+        //println!("{} R",r);
+        while (guess.to_degrees() - last_guess.to_degrees()).abs() > 0.00001 {
+            last_guess = guess;
+            c = 1. / ((1. - e2 * last_guess.sin().powf(2.)).sqrt());
+            guess = (satellite.z + A * c * e2 * last_guess.sin()).atan2(r);
+            //println!("Angle = {}",guess.to_degrees())
+        }
+        let alt = (r / guess.cos()) - A * c;
+        [guess.to_degrees(), alt]
+    }
+    fn get_long(satellite: &Eci, sidereal_angle: f64) -> f64 {
+        let data = (satellite.y.atan2(satellite.x) - sidereal_angle).to_degrees();
+        if data < -180. {
+            return data + 360.;
+        } else if data > 180. {
+            return data - 360.;
+        } else {
+            data
+        }
+        //println!("Angle = {}",constrained_angle);
+    }
     pub fn get_sub_point(&self, offset: i64) -> SubPoint {
-        fn get_lat_and_alt(satellite: &Eci) -> [f64; 2] {
-            let mut guess =
-                (satellite.z).atan2((satellite.x.powf(2.) + satellite.y.powf(2.)).sqrt());
-            let e2 = 2. * F - F * F;
-            let mut c = 1. / (1. - e2 * guess.sin().powf(2.)).sqrt();
-            let mut last_guess: f64 = 0.;
-            //let r = A*c*(guess.cos());
-            let r = (satellite.x.powf(2.) + satellite.y.powf(2.)).sqrt();
-            //println!("{} R",r);
-            while (guess.to_degrees() - last_guess.to_degrees()).abs() > 0.00001 {
-                last_guess = guess;
-                c = 1. / ((1. - e2 * last_guess.sin().powf(2.)).sqrt());
-                guess = (satellite.z + A * c * e2 * last_guess.sin()).atan2(r);
-                //println!("Angle = {}",guess.to_degrees())
-            }
-            let alt = (r / guess.cos()) - A * c;
-            [guess.to_degrees(), alt]
-        }
-        fn get_long(satellite: &Eci, sidereal_angle: f64) -> f64 {
-            let data = -(satellite.y.atan2(satellite.x) - sidereal_angle).to_degrees();
-            if data < -180. {
-                return data + 360.;
-            } else if data > 180. {
-                return data - 360.;
-            } else {
-                data
-            }
-            //println!("Angle = {}",constrained_angle);
-        }
         let time_stamp = self.epoch.and_utc().timestamp() + offset;
         let sidereal_angle = Self::sidereal_angle(time_stamp);
         let eci_point = self.get_point_eci(offset);
-        let longitude = get_long(&eci_point, sidereal_angle);
-        let lat_alt = get_lat_and_alt(&eci_point);
+        let longitude = Self::get_long(&eci_point, sidereal_angle);
+        let lat_alt = Self::get_lat_and_alt(&eci_point);
         let latitude = lat_alt[0];
         let altitude = lat_alt[1];
         SubPoint {
@@ -356,14 +382,41 @@ mod tests {
     fn test_sub_point() {
         let sat = Satellite::new_from_tle(
             "ISS (ZARYA)             
-            1 25544U 98067A   25072.43808874  .00018974  00000+0  33994-3 0  9997
-            2 25544  51.6354  61.2721 0006420  16.6184 343.5014 15.49959635500318",
+            1 25544U 98067A   25122.54440123  .00015063  00000+0  27814-3 0  9994
+            2 25544  51.6345 173.1350 0002187  74.2134 285.9096 15.49297959508085",
         );
-        let date = quick_gen_datetime(2025, 03, 13, 21, 54, 42);
+        let date = quick_gen_datetime(2025, 05, 10, 16, 20, 00);
         let reference_sub_point = sat.get_sub_point(sat.seconds_since_epoch(&date));
-        assert_almost_eq(reference_sub_point.long, -63.7546);
-        assert_almost_eq(reference_sub_point.lat, 35.8798);
-        assert_almost_eq(reference_sub_point.alt, 421.112511)
+        assert_almost_eq(reference_sub_point.long, 58.55902);
+        assert_almost_eq(reference_sub_point.lat, 38.90097);
+        assert_almost_eq(reference_sub_point.alt, 420.30821)
+    }
+    #[test]
+    fn test_sub_point_2() {
+        let time_stamp = quick_gen_datetime(1995, 11, 18, 12, 46, 0).timestamp();
+        let sidereal_angle = Satellite::sidereal_angle(time_stamp);
+        let long = Satellite::get_long(
+            &Eci {
+                x: -4400.594,
+                y: 1932.870,
+                z: 4760.712,
+                vx: 0.0,
+                vy: 0.0,
+                vz: 0.0,
+            },
+            sidereal_angle,
+        );
+        let [lat, alt] = Satellite::get_lat_and_alt(&Eci {
+            x: -4400.594,
+            y: 1932.870,
+            z: 4760.712,
+            vx: 0.0,
+            vy: 0.0,
+            vz: 0.0,
+        });
+        assert_almost_eq(44.90766, lat);
+        assert_almost_eq(-92.31, long);
+        assert_almost_eq(397.50528, alt);
     }
     #[test]
     fn test_gs_position() {
@@ -440,5 +493,17 @@ mod tests {
         assert_almost_eq(refence_look_angle.azimuth, 238.8);
         assert_almost_eq(refence_look_angle.elevation, -66.);
         assert_almost_eq(refence_look_angle.range, 12104.405); //off by 3km
+    }
+    #[test]
+    fn test_sma() {
+        let sat = Satellite::new_from_tle(
+            "ISS (ZARYA)             
+1 25544U 98067A   25129.52987991  .00008832  00000+0  16579-3 0  9990
+2 25544  51.6373 138.5518 0002579  96.2220  12.6743 15.49431663509168",
+        );
+        let apo_peri = sat.get_apogee_perigee();
+        println!("{}", sat.mean_motion.sma);
+        assert_almost_eq(apo_peri.0.floor(), 420.0);
+        assert_almost_eq(apo_peri.1, 417.0);
     }
 }

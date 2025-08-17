@@ -332,19 +332,6 @@ impl Satellite {
     }
 }
 
-fn _load_deltat() -> HashMap<i64, f64> {
-    let delta_t_data = include_bytes!("deltat.txt");
-    let mut output: HashMap<i64, f64> = Default::default();
-    for i in delta_t_data.lines() {
-        let line_data = i.unwrap();
-        let line: Vec<&str> = line_data.split_whitespace().collect();
-        output.insert(
-            line[0].parse::<i64>().unwrap() * 100 + line[1].parse::<i64>().unwrap(),
-            line[3].parse::<f64>().unwrap(),
-        );
-    }
-    output
-}
 #[cfg(test)]
 mod tests {
 

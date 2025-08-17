@@ -1,17 +1,45 @@
-use std::f64::consts::PI;
-
-use serde::{Serialize,Deserialize};
-use crate::{types::{Eci, SatAngle, SubPoint, A, F}, helpers::modulus,GroundStation};
-use chrono::{Datelike, NaiveDateTime, Timelike};
+use crate::{
+    GroundStation,
+    helpers::modulus,
+    types::{A, Eci, F, SatAngle, SubPoint},
+};
+use chrono::{DateTime, Datelike, NaiveDateTime, Timelike, Utc};
+use serde::{Deserialize, Serialize};
 use sgp4::Constants;
+use std::{collections::HashMap, f64::consts::PI, io::BufRead};
 
+const MU: f64 = 3.986004418E14;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Satellite {
+    tle: String,
     constants: Constants,
-    name: String,
-    epoch: NaiveDateTime,//Epoch of the structs TLE
+    sat_data: SatData,
+    orbital_period: f64,
+    epoch: NaiveDateTime, //Epoch of the structs TLE
+    mean_motion: MeanMotion,
 }
+impl PartialEq for Satellite {
+    fn eq(&self, other: &Self) -> bool {
+        if self.sat_data.norad_id == other.sat_data.norad_id {
+            self.epoch == other.epoch
+        } else {
+            false
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct MeanMotion {
+    ec: f64,
+    sma: f64,
+}
+#[derive(Serialize, Deserialize, Clone)]
+struct SatData {
+    name: String,
+    norad_id: u64,
+}
+
 impl Satellite {
     pub fn new_from_tle(tle: &str) -> Satellite {
         let mut line_count = 0;
@@ -40,23 +68,45 @@ impl Satellite {
         )
         .unwrap();
         let epoch = elem.datetime;
-        let constants = sgp4::Constants::from_elements(&elem).unwrap();//need to get rid of this?
+        let period = 1. / elem.mean_motion * 86400.;
+        let norad_id = elem.norad_id;
+        let n = elem.mean_motion * (2.0 * PI) / 86400.0;
+        let sma = (MU / n.powi(2)).powf(1. / 3.);
+        let constants = sgp4::Constants::from_elements(&elem).unwrap(); //need to get rid of this?
         Satellite {
+            tle: tle.to_string(),
             constants,
-            name: name.to_string(),
+            orbital_period: period,
+            sat_data: SatData {
+                name: name.to_string(),
+                norad_id,
+            },
             epoch,
+            mean_motion: MeanMotion {
+                ec: elem.eccentricity,
+                sma,
+            },
         }
+    }
+    pub fn get_tle(&self) -> &str {
+        self.tle.as_str()
+    }
+    pub fn get_period(&self) -> f64 {
+        self.orbital_period
+    }
+    pub fn get_norad_id(&self) -> u64 {
+        self.sat_data.norad_id
     }
     pub fn get_speed(&self, offset: i64) -> f64 {
         let set = self.get_point_eci(offset);
         (set.vx.powf(2.) + set.vy.powf(2.) + set.vz.powf(2.)).sqrt()
     }
     pub fn get_name(&self) -> String {
-        self.name.to_string()
+        self.sat_data.name.to_string()
     }
-    pub fn get_point_eci(&self,offset:i64)->Eci{
+    pub fn get_point_eci(&self, offset: i64) -> Eci {
         let consts = &self.constants;
-        let prop = consts.propagate(offset as f64/60.).unwrap();
+        let prop = consts.propagate(offset as f64 / 60.).unwrap();
         Eci {
             x: prop.position[0],
             y: prop.position[1],
@@ -66,76 +116,172 @@ impl Satellite {
             vz: prop.velocity[2],
         }
     }
-    pub fn get_look_angle(&self, station: &GroundStation, offset: i64) -> SatAngle {
-        fn xyz_from_lla(loc: &GroundStation, sidereal_angle: f64) -> [f64; 3] {
-            //Alt in meters, lat/long in decimal degrees
-            let true_alt = 6378.137 + loc.alt / 1000.;
-            let c = 1. / (1. + F * (F - 2.) * (loc.lat.to_radians().sin()).powf(2.)).sqrt();
-            let s = (1. - F).powf(2.) * c;
-            let z = true_alt * loc.lat.to_radians().sin() * s;
-            let r = true_alt * loc.lat.to_radians().cos() * c;
-            let theta_true = sidereal_angle.to_degrees() + loc.long;
-            let x = r * theta_true.to_radians().cos();
-            let y = r * theta_true.to_radians().sin();
-            [x, y, z]
+    ///Returns values relative to spherical earth, may not match sub point values
+    pub fn get_apogee_perigee(&self) -> (f64, f64) {
+        let apogee = self.mean_motion.sma * (1.0 + self.mean_motion.ec);
+        let perigee = self.mean_motion.sma * (1.0 - self.mean_motion.ec);
+        return (apogee / 1000.0 - 6378.14, perigee / 1000.0 - 6378.14);
+    }
+
+    fn lla_to_ecef(loc: [f64; 3], sidereal_angle: f64, time_stamp: i64) -> [f64; 3] {
+        let initial_condition = Self::ecef_xyz_from_lla([loc[0], loc[1], loc[2]], sidereal_angle);
+        let adjustments = Self::compute_precession_nutation(time_stamp);
+        Self::rotate_precession_nuation(initial_condition, adjustments)
+    }
+    fn ecef_xyz_from_lla(loc: [f64; 3], sidereal_angle: f64) -> [f64; 3] {
+        let c = 1. / (1. + F * (F - 2.) * loc[0].to_radians().sin().powi(2)).sqrt();
+        let s = (1. - F).powi(2) * c;
+        let local_sidereal = loc[1].to_radians() + sidereal_angle;
+        let ecef_x =
+            (A + loc[2] / 1000.0) * c * (loc[0].to_radians().cos()) * (local_sidereal.cos());
+        let ecef_y =
+            (A + loc[2] / 1000.0) * c * (loc[0].to_radians().cos()) * (local_sidereal.sin());
+        let ecef_z = (A + loc[2] / 1000.0) * s * (loc[0].to_radians().sin());
+        [ecef_x, ecef_y, ecef_z]
+    }
+    fn compute_precession_nutation(time_stamp: i64) -> (f64, f64) {
+        //https://www2.mps.mpg.de/homes/fraenz/systems/systems2art/node3.html
+        let (j2000_day, _) = Self::get_julian_date(time_stamp);
+        let t0 = j2000_day / 36525.0;
+        let epsilon_j2k = 23.439291111;
+        let epsilon_date =
+            epsilon_j2k - 0.013004167 * t0 - 0.000000164 * t0.powi(2) - 0.000000504 * t0.powi(3);
+        let del_epsilon = 0.0026 * (125. - 0.05295 * j2000_day).to_radians().cos()
+            + 0.0002 * (200.9 + 1.97129 * j2000_day).to_radians().cos();
+        let obliquity = epsilon_date + del_epsilon;
+        let long_nutation = -0.0048 * (125.0 - 0.05295 * j2000_day).to_radians().sin()
+            - 0.0004 * (200.9 + 1.97129 * j2000_day).to_radians().sin();
+        (obliquity.to_radians(), long_nutation.to_radians())
+    }
+    fn rotate_precession_nuation(
+        initial_state: [f64; 3],
+        precession_nutation: (f64, f64),
+    ) -> [f64; 3] {
+        let first_x = initial_state[0];
+        let first_y = initial_state[1] * (precession_nutation.0).cos()
+            + initial_state[2] * (precession_nutation.0).sin();
+        let first_z = -initial_state[1] * (precession_nutation.0).sin()
+            + initial_state[2] * (precession_nutation.0).cos();
+        let second_x = first_x * (-1. * precession_nutation.1).cos()
+            + first_y * (-1. * precession_nutation.1).sin();
+        let second_y = -1. * first_x * (-1. * precession_nutation.1).sin()
+            + first_y * (-1. * precession_nutation.1).cos();
+        let second_z = first_z;
+        let third_x = second_x;
+        let third_y =
+            second_y * (-precession_nutation.0).cos() + second_z * (-precession_nutation.0).sin();
+        let third_z =
+            -second_y * (-precession_nutation.0).sin() + second_z * (-precession_nutation.0).cos();
+        [third_x, third_y, third_z]
+    }
+
+    ///Computes the look angle from the station to the satellite, accounting for refractive effects. Returns None if the station cannot actually see the satellite.
+    pub fn get_look_angle_refraction(&self, station: &GroundStation, offset: i64) -> SatAngle {
+        let base_look_angle = self.get_look_angle(station, offset);
+        let _min_elv = -0.875 * (station.alt).sqrt();
+        if base_look_angle.elevation > 10. {
+            return base_look_angle;
+        } else {
+            let adjustment_factor = 1.
+                / (1.728
+                    + 0.5411 * base_look_angle.elevation
+                    + 0.03723 * base_look_angle.elevation.powi(2)
+                    + station.alt
+                        * (0.1815
+                            + 0.06272 * base_look_angle.elevation
+                            + 0.011380 * base_look_angle.elevation.powi(2))
+                    + station.alt.powi(2) * (0.01727 + 0.008288 * base_look_angle.elevation));
+            SatAngle {
+                azimuth: base_look_angle.azimuth,
+                elevation: base_look_angle.elevation + adjustment_factor,
+                range: base_look_angle.range,
+            }
         }
-        let time_stamp= self.epoch.timestamp()+offset;
-        let sidereal = Self::sidereal_angle(time_stamp);
+    }
+
+    /// Compute the current look angle between the satellite and the ground. NOTE: computes the free space look angle, and does not account for refraction.
+    /// Use the functions concerning pass propagation to include atmospheric refraction
+    ///
+    pub fn get_look_angle(&self, station: &GroundStation, offset: i64) -> SatAngle {
+        let time_stamp = self.epoch.and_utc().timestamp() + offset;
+        let updated_ts = time_stamp; // + Self::get_delta_t(time_stamp) as i64;
         let satellite = self.get_point_eci(offset);
-        let observer = xyz_from_lla(station, sidereal);
-        let rx = satellite.x - observer[0];
-        let ry = satellite.y - observer[1];
-        let rz = satellite.z - observer[2];
-        let rad_lat = station.lat.to_radians();
-        let side_angle = modulus(
-            (sidereal.to_degrees() + station.long).to_radians(),
-            2. * PI,
+        Self::get_look_angle_direct(station, updated_ts, [satellite.x, satellite.y, satellite.z])
+    }
+
+    fn get_look_angle_direct(
+        station: &GroundStation,
+        time_stamp: i64,
+        satellite: [f64; 3],
+    ) -> SatAngle {
+        let sidereal = Self::sidereal_angle(time_stamp);
+        let observer = Self::lla_to_ecef(
+            [station.lat, station.long, station.alt],
+            sidereal,
+            time_stamp,
         );
-        let rs = rad_lat.sin() * side_angle.cos() * rx + rad_lat.sin() * side_angle.sin() * ry
-            - rad_lat.cos() * rz;
-        let re = -side_angle.sin() * rx + side_angle.cos() * ry;
-        let rz = rad_lat.cos() * side_angle.cos() * rx
-            + rad_lat.cos() * side_angle.sin() * ry
-            + rad_lat.sin() * rz;
-        let range = (rs * rs + re * re + rz * rz).sqrt();
-        let elevation = ((rz / range).asin()).to_degrees();
-        let mut azimuth = (-re).atan2(rs);
+        let local_sidereal = modulus(station.long.to_radians() + sidereal, 2.0 * PI);
+        let rx = satellite[0] - observer[0];
+        let ry = satellite[1] - observer[1];
+        let rz = satellite[2] - observer[2];
+        let rs = station.lat.to_radians().sin() * local_sidereal.cos() * rx
+            + station.lat.to_radians().sin() * local_sidereal.sin() * ry
+            - station.lat.to_radians().cos() * rz;
+        let re = -1. * local_sidereal.sin() * rx + local_sidereal.cos() * ry;
+        let rd = station.lat.to_radians().cos() * local_sidereal.cos() * rx
+            + station.lat.to_radians().cos() * local_sidereal.sin() * ry
+            + station.lat.to_radians().sin() * rz;
+        let range = (rx.powi(2) + ry.powi(2) + rz.powi(2)).sqrt();
+        let elevation = ((rd / range).asin()).to_degrees();
+        let mut azimuth = (-re / rs).atan();
         if rs > 0. {
             azimuth += PI
-        } else if rs < 0. {
+        }
+        if azimuth < 0. {
             azimuth += 2. * PI
         }
-        azimuth = modulus(azimuth.to_degrees(), 360.);
-        SatAngle{elevation, azimuth, range}
+        azimuth = azimuth.to_degrees();
+        SatAngle {
+            elevation,
+            azimuth,
+            range,
+        }
     }
-    ///compute the sub_point at a given time since epoch in seconds. 
-    pub fn get_sub_point(&self,offset:i64) -> SubPoint {
-        fn get_lat_and_alt(satellite: &Eci) -> [f64; 2] {
-            let mut guess = (satellite.z).atan2((satellite.x.powf(2.) + satellite.y.powf(2.)).sqrt());
-            let e2 = 2. * F - F * F;
-            let mut c = 1. / (1. - e2 * guess.sin().powf(2.)).sqrt();
-            let mut last_guess: f64 = 0.;
-            //let r = A*c*(guess.cos());
-            let r = (satellite.x.powf(2.) + satellite.y.powf(2.)).sqrt();
-            //println!("{} R",r);
-            while (guess.to_degrees() - last_guess.to_degrees()).abs() > 0.00001 {
-                last_guess = guess;
-                c = 1. / ((1. - e2 * last_guess.sin().powf(2.)).sqrt());
-                guess = (satellite.z + A * c * e2 * last_guess.sin()).atan2(r);
-                //println!("Angle = {}",guess.to_degrees())
-            }
-            let alt = (r / guess.cos()) - A * c;
-            [guess.to_degrees(), alt]
+    ///compute the sub_point at a given time since epoch in seconds.
+    fn get_lat_and_alt(satellite: &Eci) -> [f64; 2] {
+        let mut guess = (satellite.z).atan2((satellite.x.powf(2.) + satellite.y.powf(2.)).sqrt());
+        let e2 = 2. * F - F * F;
+        let mut c = 1. / (1. - e2 * guess.sin().powf(2.)).sqrt();
+        let mut last_guess: f64 = 0.;
+        //let r = A*c*(guess.cos());
+        let r = (satellite.x.powf(2.) + satellite.y.powf(2.)).sqrt();
+        //println!("{} R",r);
+        while (guess.to_degrees() - last_guess.to_degrees()).abs() > 0.00001 {
+            last_guess = guess;
+            c = 1. / ((1. - e2 * last_guess.sin().powf(2.)).sqrt());
+            guess = (satellite.z + A * c * e2 * last_guess.sin()).atan2(r);
+            //println!("Angle = {}",guess.to_degrees())
         }
-        fn get_long(satellite: &Eci, sidereal_angle:f64) -> f64 {
-            -1.*(modulus((((satellite.y/satellite.x).atan()) - sidereal_angle).to_degrees(),360.)-180.)
-            //println!("Angle = {}",constrained_angle);
+        let alt = (r / guess.cos()) - A * c;
+        [guess.to_degrees(), alt]
+    }
+    fn get_long(satellite: &Eci, sidereal_angle: f64) -> f64 {
+        let data = (satellite.y.atan2(satellite.x) - sidereal_angle).to_degrees();
+        if data < -180. {
+            return data + 360.;
+        } else if data > 180. {
+            return data - 360.;
+        } else {
+            data
         }
-        let time_stamp= self.epoch.timestamp()+offset;
+        //println!("Angle = {}",constrained_angle);
+    }
+    pub fn get_sub_point(&self, offset: i64) -> SubPoint {
+        let time_stamp = self.epoch.and_utc().timestamp() + offset;
         let sidereal_angle = Self::sidereal_angle(time_stamp);
         let eci_point = self.get_point_eci(offset);
-        let longitude = get_long(&eci_point, sidereal_angle);
-        let lat_alt = get_lat_and_alt(&eci_point);
+        let longitude = Self::get_long(&eci_point, sidereal_angle);
+        let lat_alt = Self::get_lat_and_alt(&eci_point);
         let latitude = lat_alt[0];
         let altitude = lat_alt[1];
         SubPoint {
@@ -144,9 +290,8 @@ impl Satellite {
             alt: altitude,
         }
     }
-    fn sidereal_angle(time_stamp: i64)->f64{
-        //Meeus' approach from celestrak https://celestrak.org/columns/v02n02/
-        let base_time = NaiveDateTime::from_timestamp_opt(time_stamp,0).unwrap();
+    fn get_julian_date(time_stamp: i64) -> (f64, f64) {
+        let base_time = DateTime::from_timestamp(time_stamp, 0).unwrap();
         let years = base_time.year() as f64 - 1.;
         let a = (years / 100.).trunc();
         let b = 2. - a + (a / 4.).trunc();
@@ -156,29 +301,41 @@ impl Satellite {
         let julian_day = julian_year + day as f64;
         let j2000_day = julian_day - 2451545.0;
         let offset_time = base_time.num_seconds_from_midnight() as f64;
+        (j2000_day, offset_time)
+    }
+    fn sidereal_angle(time_stamp: i64) -> f64 {
+        //Meeus' approach from celestrak https://celestrak.org/columns/v02n02/
         //Adjust for UT1 off of nutation etc table
         //based on
         // https://celestrak.org/columns/v02n02/
         //From https://celestrak.org/publications/AIAA/2006-6753/AIAA-2006-6753-Rev2.pdf
+        let (j2000_day, offset_time) = Self::get_julian_date(time_stamp);
         let offset = offset_time / 86400.;
         let t = j2000_day / 36525.0;
         let theta_0 = 24110.54841 + 8640184.812866 * t + 0.093104 * t * t
             - t * t * t * 6.2 * 10_f64.powf(-6.);
-        let side_time = modulus(theta_0 + 1.00273790934 * offset * 86400., 86400.); //Why the 1.00?
-                                                                                    //println!{"{}",side_time} //Make constant
+        let side_time = (theta_0 + 1.00273790934 * offset * 86400.) % 86400.; //Why the 1.00?
+        //println!{"{}",side_time} //Make constant
         2. * PI * side_time / 86400.
     }
-    pub fn seconds_since(&self,other:&NaiveDateTime)->i64{
-        other.timestamp()-self.epoch.timestamp()
+    pub fn seconds_since_epoch(&self, other: &DateTime<Utc>) -> i64 {
+        other.timestamp() - self.epoch.and_utc().timestamp()
+    }
+    pub fn offset_timestamp(&self, other: i64) -> i64 {
+        other - self.epoch.and_utc().timestamp()
+    }
+    pub fn get_orbital_period(&self) -> f64 {
+        self.orbital_period
+    }
+    pub fn get_epoch(&self) -> DateTime<Utc> {
+        self.epoch.and_utc()
     }
 }
 
-
 #[cfg(test)]
-mod tests{
-    use chrono::{NaiveDate, NaiveTime};
+mod tests {
 
-    use crate::helpers::assert_almost_eq;
+    use crate::helpers::{assert_almost_eq, quick_gen_datetime};
 
     use super::*;
     #[test]
@@ -191,43 +348,149 @@ mod tests{
         assert_eq!(sat.get_name(), "DELFI-PQ");
     }
     #[test]
-    fn test_eci(){
+    fn test_sidereal_angle() {
+        let time_stamp = quick_gen_datetime(1995, 10, 1, 9, 0, 0).timestamp();
+        let sidereal_angle = Satellite::sidereal_angle(time_stamp);
+        assert_almost_eq(sidereal_angle, 2.524218);
+    }
+    #[test]
+    fn test_eci() {
         let sat = Satellite::new_from_tle(
             "RUST_SGP4(TESTING)               
             1 00005U 58002B   00179.78495062  .00000023  00000-0  28098-4 0  4753
             2 00005  34.2682 348.7242 1859667 331.7664  19.3264 10.82419157413667",
         );
         let eci_point = sat.get_point_eci(0);
-        assert_almost_eq(eci_point.x,7022.46647);
-        assert_almost_eq(eci_point.y,-1400.06656);
-        assert_almost_eq(eci_point.z,0.05106);
+        assert_almost_eq(eci_point.x, 7022.46647);
+        assert_almost_eq(eci_point.y, -1400.06656);
+        assert_almost_eq(eci_point.z, 0.05106);
     }
     #[test]
-    fn test_sub_point(){
+    fn test_sub_point() {
         let sat = Satellite::new_from_tle(
             "ISS (ZARYA)             
-            1 25544U 98067A   25072.43808874  .00018974  00000+0  33994-3 0  9997
-            2 25544  51.6354  61.2721 0006420  16.6184 343.5014 15.49959635500318",
+            1 25544U 98067A   25122.54440123  .00015063  00000+0  27814-3 0  9994
+            2 25544  51.6345 173.1350 0002187  74.2134 285.9096 15.49297959508085",
         );
-        let date = NaiveDate::from_ymd_opt(2025, 03, 13).unwrap();
-        let time = NaiveTime::from_hms_opt(21, 54, 42).unwrap();
-        let reference_sub_point = sat.get_sub_point(sat.seconds_since(&NaiveDateTime::new(date, time)));
-        assert_almost_eq(reference_sub_point.long,-63.7546);
-        assert_almost_eq(reference_sub_point.lat,35.8798);
-        assert_almost_eq(reference_sub_point.alt,421.1125)
+        let date = quick_gen_datetime(2025, 05, 10, 16, 20, 00);
+        let reference_sub_point = sat.get_sub_point(sat.seconds_since_epoch(&date));
+        assert_almost_eq(reference_sub_point.long, 58.55902);
+        assert_almost_eq(reference_sub_point.lat, 38.90097);
+        assert_almost_eq(reference_sub_point.alt, 420.30821)
     }
     #[test]
-    fn test_look_angle(){
+    fn test_sub_point_2() {
+        let time_stamp = quick_gen_datetime(1995, 11, 18, 12, 46, 0).timestamp();
+        let sidereal_angle = Satellite::sidereal_angle(time_stamp);
+        let long = Satellite::get_long(
+            &Eci {
+                x: -4400.594,
+                y: 1932.870,
+                z: 4760.712,
+                vx: 0.0,
+                vy: 0.0,
+                vz: 0.0,
+            },
+            sidereal_angle,
+        );
+        let [lat, alt] = Satellite::get_lat_and_alt(&Eci {
+            x: -4400.594,
+            y: 1932.870,
+            z: 4760.712,
+            vx: 0.0,
+            vy: 0.0,
+            vz: 0.0,
+        });
+        assert_almost_eq(44.90766, lat);
+        assert_almost_eq(-92.31, long);
+        assert_almost_eq(397.50528, alt);
+    }
+    #[test]
+    fn test_gs_position() {
+        let time_stamp = quick_gen_datetime(1995, 10, 1, 9, 0, 0).timestamp();
+        let sidereal = Satellite::sidereal_angle(time_stamp);
+        assert_almost_eq(
+            Satellite::ecef_xyz_from_lla([40., -75., 0.], sidereal)[2],
+            4077.985572,
+        );
+        assert_almost_eq(
+            Satellite::ecef_xyz_from_lla([40., -75., 0.], sidereal)[0],
+            1703.295618,
+        );
+        assert_almost_eq(
+            Satellite::ecef_xyz_from_lla([40., -75., 0.], sidereal)[1],
+            4586.651468,
+        );
+    }
+    #[test]
+    fn test_eci_from_lla() {
+        let refence_gs = &GroundStation::new([40., -93., 0.], "Test");
+        let time_stamp = quick_gen_datetime(1995, 11, 18, 12, 46, 0).timestamp();
+        let sidereal_angle = Satellite::sidereal_angle(time_stamp);
+        let output = Satellite::ecef_xyz_from_lla(
+            [refence_gs.lat, refence_gs.long, refence_gs.alt],
+            sidereal_angle,
+        );
+        assert_almost_eq(output[0], 1703.295);
+        assert_almost_eq(output[1], 4586.650);
+        assert_almost_eq(output[2], 4077.98557);
+    }
+    #[test]
+    fn test_look_angle_direct() {
+        let refence_gs = &GroundStation::new([40., -93., 0.], "Test");
+        let time_stamp = quick_gen_datetime(1995, 11, 18, 12, 46, 0).timestamp();
+        let updated_ts = time_stamp;
+        let look_angles = Satellite::get_look_angle_direct(
+            &refence_gs,
+            updated_ts,
+            [-4400.594, 1932.870, 4760.712],
+        );
+        assert_almost_eq(look_angles.azimuth, 100.3600);
+        assert_almost_eq(look_angles.elevation, 81.5200);
+    }
+    #[test]
+    fn test_look_angle() {
         let sat = Satellite::new_from_tle(
             "ISS (ZARYA)             
-            1 25544U 98067A   25072.43808874  .00018974  00000+0  33994-3 0  9997
-            2 25544  51.6354  61.2721 0006420  16.6184 343.5014 15.49959635500318",
+1 25544U 98067A   25122.54440123  .00015063  00000+0  27814-3 0  9994
+2 25544  51.6345 173.1350 0002187  74.2134 285.9096 15.49297959508085",
         );
-        let date = NaiveDate::from_ymd_opt(2025, 03, 13).unwrap();
-        let time = NaiveTime::from_hms_opt(23, 19, 42).unwrap();
-        let refence_look_angle = sat.get_look_angle(&GroundStation::new([51.9861,4.3876,74.4], "Delft"), sat.seconds_since(&NaiveDateTime::new(date, time)));
-        assert_almost_eq(refence_look_angle.azimuth, 168.7);
-        assert_almost_eq(refence_look_angle.elevation, 65.2);
-        assert_almost_eq(refence_look_angle.range, 463.006316);//off by 1km
+        let date = quick_gen_datetime(2025, 05, 2, 21, 0, 0);
+        let refence_look_angle = sat.get_look_angle(
+            &GroundStation::new([51.9861, 4.3876, 0.], "Delft"),
+            sat.seconds_since_epoch(&date),
+        );
+        assert_almost_eq(refence_look_angle.azimuth, 128.3);
+        assert_almost_eq(refence_look_angle.elevation, -3.896);
+        assert_almost_eq(refence_look_angle.range, 2824.966); //off by 3km
+    }
+    #[test]
+    fn test_look_angle_2() {
+        let sat = Satellite::new_from_tle(
+            "ISS (ZARYA)             
+1 25544U 98067A   25122.54440123  .00015063  00000+0  27814-3 0  9994
+2 25544  51.6345 173.1350 0002187  74.2134 285.9096 15.49297959508085",
+        );
+        let date = quick_gen_datetime(2025, 05, 2, 22, 0, 0);
+        let refence_look_angle = sat.get_look_angle(
+            &GroundStation::new([51.9861, 4.3876, 0.], "Delft"),
+            sat.seconds_since_epoch(&date),
+        );
+        println!("{:?}", sat.get_sub_point(sat.seconds_since_epoch(&date)));
+        assert_almost_eq(refence_look_angle.azimuth, 238.8);
+        assert_almost_eq(refence_look_angle.elevation, -66.);
+        assert_almost_eq(refence_look_angle.range, 12104.405); //off by 3km
+    }
+    #[test]
+    fn test_sma() {
+        let sat = Satellite::new_from_tle(
+            "ISS (ZARYA)             
+1 25544U 98067A   25129.52987991  .00008832  00000+0  16579-3 0  9990
+2 25544  51.6373 138.5518 0002579  96.2220  12.6743 15.49431663509168",
+        );
+        let apo_peri = sat.get_apogee_perigee();
+        println!("{}", sat.mean_motion.sma);
+        assert_almost_eq(apo_peri.0.floor(), 420.0);
+        assert_almost_eq(apo_peri.1, 417.0);
     }
 }

@@ -110,6 +110,9 @@ impl Satellite {
     pub fn get_name(&self) -> String {
         self.sat_data.name.to_string()
     }
+    pub fn get_inclination(&self) -> f64 {
+        self.mean_motion.inclination
+    }
     pub fn get_point_eci(&self, offset: i64) -> Eci {
         let consts = &self.constants;
         let prop = consts.propagate(offset as f64 / 60.).unwrap();

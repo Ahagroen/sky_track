@@ -5,14 +5,14 @@ use crate::{
 };
 use chrono::{DateTime, Datelike, NaiveDateTime, Timelike, Utc};
 use serde::{Deserialize, Serialize};
-use sgp4::Constants;
+use sgp4::{Constants, Elements};
 use std::f64::consts::PI;
+use serde_json::from_str;
 
 const MU: f64 = 3.986004418E14;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Satellite {
-    tle: String,
     constants: Constants,
     sat_data: SatData,
     orbital_period: f64,
@@ -41,6 +41,32 @@ struct SatData {
 }
 
 impl Satellite {
+    fn new_from_elements(elem:Elements)->Satellite{
+        let epoch = elem.datetime;
+        let period = 1. / elem.mean_motion * 86400.;
+        let norad_id = elem.norad_id;
+        let n = elem.mean_motion * (2.0 * PI) / 86400.0;
+        let name = elem.object_name.clone().unwrap_or("".to_string());
+        let sma = (MU / n.powi(2)).powf(1. / 3.);
+        let constants = sgp4::Constants::from_elements(&elem).unwrap(); //need to get rid of this?
+        Satellite {
+            constants,
+            orbital_period: period,
+            sat_data: SatData {
+                name: name.to_string(),
+                norad_id,
+            },
+            epoch,
+            mean_motion: MeanMotion {
+                ec: elem.eccentricity,
+                sma,
+            },
+        }
+    }
+    pub fn new_from_omm(omm:&str)->Satellite{
+        let elements:sgp4::Elements = from_str(omm).expect("Need to fix");
+        Self::new_from_elements(elements)
+    }
     pub fn new_from_tle(tle: &str) -> Satellite {
         let mut line_count = 0;
         let mut name: &str = "";
@@ -67,29 +93,7 @@ impl Satellite {
             second_line.as_bytes(),
         )
         .unwrap();
-        let epoch = elem.datetime;
-        let period = 1. / elem.mean_motion * 86400.;
-        let norad_id = elem.norad_id;
-        let n = elem.mean_motion * (2.0 * PI) / 86400.0;
-        let sma = (MU / n.powi(2)).powf(1. / 3.);
-        let constants = sgp4::Constants::from_elements(&elem).unwrap(); //need to get rid of this?
-        Satellite {
-            tle: tle.to_string(),
-            constants,
-            orbital_period: period,
-            sat_data: SatData {
-                name: name.to_string(),
-                norad_id,
-            },
-            epoch,
-            mean_motion: MeanMotion {
-                ec: elem.eccentricity,
-                sma,
-            },
-        }
-    }
-    pub fn get_tle(&self) -> &str {
-        self.tle.as_str()
+        Self::new_from_elements(elem)
     }
     pub fn get_period(&self) -> f64 {
         self.orbital_period

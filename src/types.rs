@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 pub const F: f64 = 1. / 298.257223563;
 pub const A: f64 = 6378.13700; //meters
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug,Copy,Serialize,Deserialize)]
 pub struct Eci {
     pub x: f64,
     pub y: f64,
@@ -11,7 +11,7 @@ pub struct Eci {
     pub vy: f64,
     pub vz: f64,
 }
-#[derive(Clone, Copy,Serialize,Deserialize)]
+#[derive(Clone,Debug, Copy,Serialize,Deserialize)]
 pub struct SatAngle {
     pub elevation: f64,
     pub azimuth: f64,

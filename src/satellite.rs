@@ -33,6 +33,7 @@ impl PartialEq for Satellite {
 struct MeanMotion {
     ec: f64,
     sma: f64,
+    inclination:f64
 }
 #[derive(Serialize, Deserialize, Clone)]
 struct SatData {
@@ -60,6 +61,7 @@ impl Satellite {
             mean_motion: MeanMotion {
                 ec: elem.eccentricity,
                 sma,
+                inclination:elem.inclination,
             },
         }
     }

@@ -1,15 +1,16 @@
 use std::fmt::Display;
 
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 use crate::{GroundStation, Satellite};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy,Serialize, Deserialize)]
 pub struct Pass {
-    aos: i64,
-    tme: i64,
-    max_elevation: f64,
-    los: i64,
+    pub aos: i64,
+    pub tme: i64,
+    pub max_elevation: f64,
+    pub los: i64,
 }
 
 impl Display for Pass {

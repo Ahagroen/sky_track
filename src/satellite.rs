@@ -6,7 +6,7 @@ use crate::{
 use chrono::{DateTime, Datelike, NaiveDateTime, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 use sgp4::Constants;
-use std::{collections::HashMap, f64::consts::PI, io::BufRead};
+use std::{collections::HashMap, f64::consts::PI};
 
 const MU: f64 = 3.986004418E14;
 
